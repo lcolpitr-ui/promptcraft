@@ -51,12 +51,14 @@ interface AppState {
 
   // Settings
   settings: Settings;
+  settingsLoaded: boolean;
 
   // 会话管理 Actions
-  createConversation: (title?: string) => void;
+  loadConversations: () => Promise<void>;
+  createConversation: (title?: string) => Promise<void>;
   switchConversation: (id: string) => void;
-  deleteConversation: (id: string) => void;
-  updateConversationTitle: (id: string, title: string) => void;
+  deleteConversation: (id: string) => Promise<void>;
+  updateConversationTitle: (id: string, title: string) => Promise<void>;
 
   // 框架选择 Actions
   setFrameworkMode: (mode: "auto" | "manual") => void;
@@ -65,7 +67,7 @@ interface AppState {
   // 聊天 Actions
   sendMessage: (content: string) => Promise<void>;
   stopGeneration: () => void;
-  clearCurrentChat: () => void;
+  clearCurrentChat: () => Promise<void>;
 
   // Prompt library Actions
   loadPrompts: () => Promise<void>;
@@ -76,14 +78,15 @@ interface AppState {
 
   // Settings Actions
   loadSettings: () => Promise<void>;
-  updateSettings: (settings: Partial<Settings>) => Promise<void>;
+  updateSettings: (settings: Partial<Settings>) => Promise<boolean>;
 }
 
 // 生成唯一ID
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
-// 用于取消请求的标志
+// 用于取消请求
 let isCancelled = false;
+let currentRequestId: string | null = null;
 
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial state
@@ -105,9 +108,45 @@ export const useAppStore = create<AppState>((set, get) => ({
     frameworkMode: "auto",
     defaultFramework: null,
   },
+  settingsLoaded: false,
 
-  // 创建新会话
-  createConversation: (title?: string) => {
+  // 加载会话历史
+  loadConversations: async () => {
+    try {
+      const conversations = await invoke<Conversation[]>("get_conversations");
+      if (conversations.length > 0) {
+        set({
+          conversations,
+          currentConversationId: conversations[0].id,
+          currentConversation: conversations[0],
+          messages: conversations[0].messages,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load conversations:", error);
+    }
+  },
+
+  // 创建新会话（幂等 - 如果已有空会话则不重复创建）
+  createConversation: async (title?: string) => {
+    const { conversations } = get();
+
+    // 如果没有标题，检查是否已有空会话
+    if (!title) {
+      const emptyConv = conversations.find(
+        (c) => c.messages.length === 0 && c.title === "新对话"
+      );
+      if (emptyConv) {
+        // 切换到已有空会话，不创建新的
+        set({
+          currentConversationId: emptyConv.id,
+          currentConversation: emptyConv,
+          messages: [],
+        });
+        return;
+      }
+    }
+
     const newConv: Conversation = {
       id: generateId(),
       title: title || "新对话",
@@ -116,12 +155,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       framework: null,
       created_at: new Date().toISOString(),
     };
+
     set((state) => ({
       conversations: [newConv, ...state.conversations],
       currentConversationId: newConv.id,
       currentConversation: newConv,
       messages: [],
     }));
+
+    // 保存到后端
+    try {
+      await invoke("save_conversation", { conv: newConv });
+    } catch (error) {
+      console.error("Failed to save conversation:", error);
+    }
   },
 
   // 切换会话
@@ -138,7 +185,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // 删除会话
-  deleteConversation: (id: string) => {
+  deleteConversation: async (id: string) => {
     set((state) => {
       const newConvs = state.conversations.filter((c) => c.id !== id);
       const isCurrent = state.currentConversationId === id;
@@ -149,10 +196,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         messages: isCurrent ? (newConvs[0]?.messages || []) : state.messages,
       };
     });
+
+    // 从后端删除
+    try {
+      await invoke("delete_conversation", { id });
+    } catch (error) {
+      console.error("Failed to delete conversation:", error);
+    }
   },
 
   // 更新会话标题
-  updateConversationTitle: (id: string, title: string) => {
+  updateConversationTitle: async (id: string, title: string) => {
     set((state) => ({
       conversations: state.conversations.map((c) =>
         c.id === id ? { ...c, title } : c
@@ -161,6 +215,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? { ...state.currentConversation, title }
         : state.currentConversation,
     }));
+
+    // 保存到后端
+    const { conversations } = get();
+    const conv = conversations.find((c) => c.id === id);
+    if (conv) {
+      try {
+        await invoke("save_conversation", { conv: { ...conv, title } });
+      } catch (error) {
+        console.error("Failed to update conversation title:", error);
+      }
+    }
   },
 
   // 设置框架选择模式
@@ -180,7 +245,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 如果没有当前会话，创建一个
     if (!currentConversationId) {
-      get().createConversation(content.slice(0, 20));
+      await get().createConversation(content.slice(0, 20));
     }
 
     const convId = get().currentConversationId!;
@@ -218,13 +283,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      const response = await sendMessage(content, messages, settings, framework);
+      const result = await sendMessage(content, messages, settings, framework);
 
-      // 再次检查是否被取消
-      if (isCancelled) {
+      // 检查是否被取消（后端返回 REQUEST_CANCELLED）
+      if (result === null || isCancelled) {
         set({ isLoading: false });
         return;
       }
+
+      const response = result;
 
       const assistantMessage: ChatMessage = { role: "assistant", content: response };
       const finalMessages = [...newMessages, assistantMessage];
@@ -235,16 +302,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       // 更新会话
+      const updatedConv = {
+        ...get().conversations.find((c) => c.id === convId)!,
+        messages: finalMessages,
+        framework: framework?.name || "auto",
+      };
+
       set((state) => ({
         conversations: state.conversations.map((c) =>
-          c.id === convId
-            ? { ...c, messages: finalMessages, framework: framework?.name || "auto" }
-            : c
+          c.id === convId ? updatedConv : c
         ),
         currentConversation: state.currentConversation?.id === convId
-          ? { ...state.currentConversation, messages: finalMessages }
+          ? updatedConv
           : state.currentConversation,
       }));
+
+      // 保存到后端
+      try {
+        await invoke("save_conversation", { conv: updatedConv });
+      } catch (error) {
+        console.error("Failed to save conversation:", error);
+      }
     } catch (error) {
       // 如果是用户主动取消，不显示错误
       if (isCancelled) {
@@ -267,27 +345,48 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  // 停止生成
-  stopGeneration: () => {
+  // 停止生成（真正取消后端请求）
+  stopGeneration: async () => {
     isCancelled = true;
     set({ isLoading: false });
+
+    // 调用后端取消请求
+    if (currentRequestId) {
+      try {
+        await invoke("cancel_ai_request", { requestId: currentRequestId });
+      } catch (error) {
+        console.error("Failed to cancel request:", error);
+      }
+      currentRequestId = null;
+    }
   },
 
   // 清空当前聊天
-  clearCurrentChat: () => {
+  clearCurrentChat: async () => {
     const { currentConversationId } = get();
     if (currentConversationId) {
+      const updatedConv = {
+        ...get().conversations.find((c) => c.id === currentConversationId)!,
+        messages: [],
+        concept: "",
+      };
+
       set((state) => ({
         messages: [],
         conversations: state.conversations.map((c) =>
-          c.id === currentConversationId
-            ? { ...c, messages: [], concept: "" }
-            : c
+          c.id === currentConversationId ? updatedConv : c
         ),
         currentConversation: state.currentConversation?.id === currentConversationId
-          ? { ...state.currentConversation, messages: [], concept: "" }
+          ? updatedConv
           : state.currentConversation,
       }));
+
+      // 保存到后端
+      try {
+        await invoke("save_conversation", { conv: updatedConv });
+      } catch (error) {
+        console.error("Failed to save conversation:", error);
+      }
     }
   },
 
@@ -329,6 +428,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Load settings
   loadSettings: async () => {
+    if (get().settingsLoaded) return; // 防止重复加载
     try {
       const raw = await invoke<{
         api_key: string;
@@ -348,13 +448,15 @@ export const useAppStore = create<AppState>((set, get) => ({
           defaultFramework: raw.default_framework || null,
         },
         frameworkMode: (raw.framework_mode as "auto" | "manual") || "auto",
+        settingsLoaded: true,
       });
     } catch (error) {
       console.error("Failed to load settings:", error);
+      set({ settingsLoaded: true }); // 即使失败也标记为已加载
     }
   },
 
-  // Update settings
+  // Update settings - 返回是否成功
   updateSettings: async (newSettings: Partial<Settings>) => {
     const { settings } = get();
     const updatedSettings = { ...settings, ...newSettings };
@@ -370,8 +472,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           default_framework: updatedSettings.defaultFramework,
         },
       });
+      return true;
     } catch (error) {
       console.error("Failed to save settings:", error);
+      // 回滚设置状态
+      set({ settings });
+      return false;
     }
   },
 }));

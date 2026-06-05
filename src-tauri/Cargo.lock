@@ -108,6 +108,8 @@ dependencies = [
  "tauri-plugin-http",
  "tauri-plugin-log",
  "tauri-plugin-sql",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

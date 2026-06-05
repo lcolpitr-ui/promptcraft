@@ -16,14 +16,19 @@ type Page = "chat" | "library" | "settings" | "frameworks";
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>("chat");
-  const { loadSettings, createConversation, currentConversationId } = useAppStore();
+  const { loadSettings, loadConversations, createConversation } = useAppStore();
 
   useEffect(() => {
+    // 加载设置和会话历史
     loadSettings();
-    if (!currentConversationId) {
-      createConversation();
-    }
-  }, [loadSettings, createConversation, currentConversationId]);
+    loadConversations().then(() => {
+      // 如果没有历史会话，创建一个新的
+      const { conversations } = useAppStore.getState();
+      if (conversations.length === 0) {
+        createConversation();
+      }
+    });
+  }, []); // 只在组件挂载时执行一次
 
   const navItems = [
     { id: "chat" as Page, label: "对话", icon: MessageSquare },

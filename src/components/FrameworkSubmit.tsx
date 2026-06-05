@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../stores/appStore";
 import { sendMessage } from "../lib/ai";
 import { FRAMEWORKS } from "../lib/frameworks";
@@ -8,11 +9,10 @@ import ReactMarkdown from "react-markdown";
 interface CustomFramework {
   id: string;
   name: string;
-  fullName: string;
   description: string;
-  bestFor: string[];
-  keywords: string[];
+  best_for: string[];
   template: string;
+  created_at: string;
 }
 
 export function FrameworkSubmit() {
@@ -24,34 +24,48 @@ export function FrameworkSubmit() {
   const [submitted, setSubmitted] = useState(false);
   const [showExisting, setShowExisting] = useState(false);
   const [customFrameworks, setCustomFrameworks] = useState<CustomFramework[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // AI 生成相关
   const [concept, setConcept] = useState("");
   const [generatedFramework, setGeneratedFramework] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // 加载自定义框架
-  useEffect(() => {
-    const saved = localStorage.getItem("custom_frameworks");
-    if (saved) {
-      try {
-        setCustomFrameworks(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to load custom frameworks:", e);
-      }
+  // 从数据库加载自定义框架
+  const loadCustomFrameworks = useCallback(async () => {
+    try {
+      const frameworks = await invoke<CustomFramework[]>("get_custom_frameworks");
+      setCustomFrameworks(frameworks);
+    } catch (error) {
+      console.error("Failed to load custom frameworks:", error);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
-  // 保存自定义框架到 localStorage
-  const saveCustomFrameworks = (frameworks: CustomFramework[]) => {
-    localStorage.setItem("custom_frameworks", JSON.stringify(frameworks));
-    setCustomFrameworks(frameworks);
+  useEffect(() => {
+    loadCustomFrameworks();
+  }, [loadCustomFrameworks]);
+
+  // 保存自定义框架到数据库
+  const handleSaveFramework = async (framework: CustomFramework) => {
+    try {
+      await invoke("save_custom_framework", { framework });
+      await loadCustomFrameworks();
+    } catch (error) {
+      console.error("Failed to save framework:", error);
+      alert("保存失败：" + error);
+    }
   };
 
   // 删除自定义框架
-  const handleDeleteFramework = (id: string) => {
-    const updated = customFrameworks.filter((fw) => fw.id !== id);
-    saveCustomFrameworks(updated);
+  const handleDeleteFramework = async (id: string) => {
+    try {
+      await invoke("delete_custom_framework", { id });
+      await loadCustomFrameworks();
+    } catch (error) {
+      console.error("Failed to delete framework:", error);
+    }
   };
 
   // 使用 AI 生成框架
@@ -83,6 +97,12 @@ export function FrameworkSubmit() {
         apiEndpoint: settings.apiEndpoint,
         model: settings.model
       });
+
+      if (!response) {
+        setGeneratedFramework("生成已取消");
+        return;
+      }
+
       setGeneratedFramework(response);
 
       // 尝试从响应中提取框架名称
@@ -116,21 +136,19 @@ export function FrameworkSubmit() {
   };
 
   // 提交框架
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name || !template) return;
 
     const framework: CustomFramework = {
       id: name.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now(),
       name: name.toUpperCase(),
-      fullName: name,
       description,
-      bestFor: bestFor.split(",").map((s) => s.trim()).filter(Boolean),
-      keywords: bestFor.split(",").map((s) => s.trim()).filter(Boolean),
+      best_for: bestFor.split(",").map((s) => s.trim()).filter(Boolean),
       template,
+      created_at: new Date().toISOString(),
     };
 
-    const updated = [...customFrameworks, framework];
-    saveCustomFrameworks(updated);
+    await handleSaveFramework(framework);
 
     setSubmitted(true);
     setTimeout(() => setSubmitted(false), 3000);
@@ -184,7 +202,9 @@ export function FrameworkSubmit() {
         </div>
 
         {/* 自定义框架列表 */}
-        {customFrameworks.length > 0 && (
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">加载中...</div>
+        ) : customFrameworks.length > 0 ? (
           <div>
             <h3 className="text-sm font-medium mb-3">自定义框架 ({customFrameworks.length})</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -204,7 +224,7 @@ export function FrameworkSubmit() {
                     </button>
                   </div>
                   <div className="flex flex-wrap gap-1 mt-2">
-                    {fw.bestFor.slice(0, 4).map((tag) => (
+                    {fw.best_for.slice(0, 4).map((tag) => (
                       <span key={tag} className="px-1.5 py-0.5 text-[10px] bg-secondary rounded-full">
                         {tag}
                       </span>
@@ -214,7 +234,7 @@ export function FrameworkSubmit() {
               ))}
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* AI 生成框架 */}
         <div className="border-t border-border pt-6">
@@ -229,7 +249,7 @@ export function FrameworkSubmit() {
               <textarea
                 value={concept}
                 onChange={(e) => setConcept(e.target.value)}
-                placeholder="例如：我需要一个专门用于面试准备的框架，帮助我组织回答...\n\n或者：我想要一个创意写作框架，能激发灵感并结构化故事..."
+                placeholder="例如：我需要一个专门用于面试准备的框架，帮助我组织回答..."
                 rows={3}
                 className="w-full mt-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
@@ -329,7 +349,7 @@ export function FrameworkSubmit() {
             </button>
 
             <p className="text-xs text-muted-foreground">
-              保存的框架可在对话中手动选择使用。
+              保存的框架会存入数据库，不会丢失。
             </p>
           </div>
         </div>
