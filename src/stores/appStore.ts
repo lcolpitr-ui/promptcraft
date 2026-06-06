@@ -306,6 +306,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const convId = get().currentConversationId!;
 
+    if (currentRequestId) {
+      const previousRequestId = currentRequestId;
+      isCancelled = true;
+      try {
+        await safeInvoke("cancel_ai_request", { requestId: previousRequestId });
+      } catch (error) {
+        console.error("Failed to cancel previous request:", error);
+      }
+    }
+
     // 重置取消标志
     isCancelled = false;
     const requestId = crypto.randomUUID();
