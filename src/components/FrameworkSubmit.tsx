@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../stores/appStore";
 import { sendMessage } from "../lib/ai";
 import { FRAMEWORKS } from "../lib/frameworks";
-import { Plus, Save, Sparkles, Check, Wand2, Loader2, Trash2 } from "lucide-react";
+import { Plus, Save, Sparkles, Check, Wand2, Loader2, Trash2, Eye, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 interface CustomFramework {
@@ -23,6 +23,7 @@ export function FrameworkSubmit() {
   const [bestFor, setBestFor] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [showExisting, setShowExisting] = useState(false);
+  const [expandedBuiltInFrameworkId, setExpandedBuiltInFrameworkId] = useState<string | null>(null);
   const [customFrameworks, setCustomFrameworks] = useState<CustomFramework[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -189,7 +190,26 @@ export function FrameworkSubmit() {
             <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
               {FRAMEWORKS.map((fw) => (
                 <div key={fw.id} className="min-w-0 rounded-lg border border-border p-3">
-                  <div className="text-sm font-medium text-wrap-anywhere">{fw.name}</div>
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-wrap-anywhere">{fw.name}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground text-wrap-anywhere">{fw.fullName}</div>
+                    </div>
+                    <button
+                      onClick={() =>
+                        setExpandedBuiltInFrameworkId(expandedBuiltInFrameworkId === fw.id ? null : fw.id)
+                      }
+                      className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      title={expandedBuiltInFrameworkId === fw.id ? "收起架构" : "查看架构"}
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 transition-transform ${
+                          expandedBuiltInFrameworkId === fw.id ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                  </div>
                   <div className="mt-1 text-xs text-muted-foreground text-wrap-anywhere">{fw.description}</div>
                   <div className="mt-2 flex min-w-0 flex-wrap gap-1">
                     {fw.bestFor.slice(0, 4).map((tag) => (
@@ -198,6 +218,14 @@ export function FrameworkSubmit() {
                       </span>
                     ))}
                   </div>
+                  {expandedBuiltInFrameworkId === fw.id && (
+                    <div className="mt-3 min-w-0 border-t border-border pt-3">
+                      <div className="mb-2 text-xs font-medium text-wrap-anywhere">框架架构</div>
+                      <pre className="max-h-80 min-w-0 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs leading-relaxed text-wrap-anywhere">
+                        {fw.template}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

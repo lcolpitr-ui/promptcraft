@@ -57,6 +57,7 @@ jobs:
             PromptCraft Windows release.
 
             Highlights:
+            - Built-in framework cards can now expand to show each framework architecture and template.
             - New OASIS framework based on OpenAI prompt guidance for outcome-first, evidence-aware prompts.
             - OpenAI-compatible API endpoint normalization for DeepSeek and OpenAI base URLs.
             - Responsive UI safeguards for long model names, API URLs, chat text, and framework labels.
