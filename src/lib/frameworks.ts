@@ -17,6 +17,23 @@ export interface FrameworkMatchResult {
   reason: string;
 }
 
+export interface PromptHistorySignal {
+  title?: string;
+  content?: string;
+  tags?: string[];
+  category?: string;
+  source_framework?: string | null;
+  framework_id?: string | null;
+  user_input?: string | null;
+  use_case?: string | null;
+  output_type?: string | null;
+  is_favorite?: boolean;
+  favorite?: boolean;
+  rating?: number | null;
+  use_count?: number;
+  usage_count?: number;
+}
+
 type IntentRule = {
   label: string;
   terms: string[];
@@ -297,7 +314,12 @@ function getFieldMatches(input: string, values: string[], weight: number, label:
         return;
       }
 
-      const words = normalized.split(/[\s,，。;；:：/|()（）\-_]+/).filter((word) => word.length >= 2);
+      const cjkTokens = (normalized.match(/[\u4e00-\u9fff]{2,}/g) || [])
+        .flatMap((text) => Array.from({ length: Math.max(0, text.length - 1) }, (_, index) => text.slice(index, index + 2)));
+      const words = [
+        ...normalized.split(/[\s,，。;；:：/|()（）\-_]+/),
+        ...cjkTokens,
+      ].filter((word) => word.length >= 2);
       const hitCount = words.filter((word) => input.includes(word)).length;
       if (hitCount > 0) {
         score += Math.min(weight - 1, hitCount);
@@ -340,6 +362,63 @@ function scoreIntent(input: string, framework: PromptFramework) {
   return { score, matches };
 }
 
+function getHistoryFrameworkKey(prompt: PromptHistorySignal): string | null {
+  return prompt.framework_id || prompt.source_framework || null;
+}
+
+function matchesHistoryFramework(prompt: PromptHistorySignal, framework: PromptFramework): boolean {
+  const key = getHistoryFrameworkKey(prompt);
+  if (!key) return false;
+  const normalizedKey = normalizeText(key.replace(/^custom:/, ""));
+  return [
+    framework.id,
+    framework.id.replace(/^custom:/, ""),
+    framework.name,
+    framework.fullName,
+  ].some((value) => normalizeText(value) === normalizedKey);
+}
+
+function getHistoryRelevance(input: string, prompt: PromptHistorySignal): { score: number; matches: string[] } {
+  const values = [
+    prompt.title || "",
+    prompt.content || "",
+    prompt.category || "",
+    prompt.user_input || "",
+    prompt.use_case || "",
+    prompt.output_type || "",
+    ...(prompt.tags || []),
+  ];
+  const fieldMatch = getFieldMatches(input, values, 4, "历史");
+  return {
+    score: fieldMatch.score,
+    matches: fieldMatch.matches,
+  };
+}
+
+function scoreHistory(input: string, framework: PromptFramework, prompts: PromptHistorySignal[]) {
+  let score = 0;
+  const matches: string[] = [];
+
+  for (const prompt of prompts) {
+    if (!matchesHistoryFramework(prompt, framework)) continue;
+    const relevance = getHistoryRelevance(input, prompt);
+    if (relevance.score <= 0) continue;
+
+    const usageCount = prompt.usage_count ?? prompt.use_count ?? 0;
+    const rating = prompt.rating ?? 0;
+    const isFavorite = prompt.favorite ?? prompt.is_favorite ?? false;
+    const historyScore = Math.min(relevance.score, 6)
+      + Math.min(usageCount, 10) * 0.35
+      + (isFavorite ? 2.5 : 0)
+      + (rating ? Math.max(0, rating - 3) * 1.25 : 0);
+
+    score += historyScore;
+    matches.push(`历史提示词：${prompt.title || framework.name}`);
+  }
+
+  return { score, matches };
+}
+
 function confidenceFromScore(score: number): FrameworkMatchResult["confidence"] {
   if (score >= HIGH_CONFIDENCE_SCORE) return "high";
   if (score >= MEDIUM_CONFIDENCE_SCORE) return "medium";
@@ -354,7 +433,8 @@ function getFallbackFramework(frameworks: PromptFramework[]): PromptFramework {
 
 export function matchFrameworkRecommendation(
   userInput: string,
-  frameworks: PromptFramework[] = FRAMEWORKS
+  frameworks: PromptFramework[] = FRAMEWORKS,
+  historyPrompts: PromptHistorySignal[] = []
 ): FrameworkMatchResult {
   const usableFrameworks = frameworks.length > 0 ? frameworks : FRAMEWORKS;
   const input = normalizeText(userInput);
@@ -377,14 +457,17 @@ export function matchFrameworkRecommendation(
     const keywordMatch = getFieldMatches(input, framework.keywords, 2, "关键词");
     const templateMatch = getFieldMatches(input, [framework.template], 1, "模板");
     const intentMatch = scoreIntent(input, framework);
+    const historyMatch = scoreHistory(input, framework, historyPrompts);
     const score = nameMatch.score
       + descriptionMatch.score
       + bestForMatch.score
       + keywordMatch.score
       + templateMatch.score
-      + intentMatch.score;
+      + intentMatch.score
+      + historyMatch.score;
     const reasons = [
       ...intentMatch.matches.map((match) => `意图：${match}`),
+      ...historyMatch.matches.slice(0, 2),
       ...bestForMatch.matches.slice(0, 2).map((match) => `适用：${match}`),
       ...keywordMatch.matches.slice(0, 2).map((match) => `关键词：${match}`),
       ...nameMatch.matches.slice(0, 1).map((match) => `名称：${match}`),

@@ -19,6 +19,7 @@ export function ChatView() {
     lastFrameworkMatch,
     lastContextTrim,
     currentConversation,
+    prompts,
   } = useAppStore();
   const [input, setInput] = useState("");
   const [saveDraft, setSaveDraft] = useState<Prompt | null>(null);
@@ -27,13 +28,16 @@ export function ChatView() {
   const autoFrameworkPreview = useMemo(() => {
     if (frameworkMode !== "auto") return null;
     const trimmed = input.trim();
-    return trimmed ? matchFrameworkRecommendation(trimmed, availableFrameworks) : lastFrameworkMatch;
-  }, [availableFrameworks, frameworkMode, input, lastFrameworkMatch]);
+    return trimmed ? matchFrameworkRecommendation(trimmed, availableFrameworks, prompts) : lastFrameworkMatch;
+  }, [availableFrameworks, frameworkMode, input, lastFrameworkMatch, prompts]);
   const frameworkStatus = frameworkMode === "manual"
     ? (selectedFramework ? `使用 ${selectedFramework.name} 框架` : "手动选择框架")
     : autoFrameworkPreview
       ? `${autoFrameworkPreview.isFallback ? "默认框架" : "自动匹配"}：${autoFrameworkPreview.framework.name}`
       : "自动匹配框架";
+  const frameworkReason = autoFrameworkPreview && frameworkMode === "auto"
+    ? autoFrameworkPreview.reason.slice(0, 48)
+    : "";
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -116,6 +120,7 @@ export function ChatView() {
         <FrameworkSelector />
         <div className="min-w-0 text-xs text-muted-foreground text-wrap-anywhere">
           {frameworkStatus}
+          {frameworkReason ? ` · ${frameworkReason}` : ""}
           {lastContextTrim?.trimmed ? ` · 已裁剪上下文 ${lastContextTrim.sentMessages}/${lastContextTrim.originalMessages}` : ""}
         </div>
       </div>

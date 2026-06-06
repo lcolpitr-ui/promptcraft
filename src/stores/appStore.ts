@@ -382,7 +382,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // 发送消息
   sendMessage: async (content: string) => {
-    const { messages, settings, frameworkMode, selectedFramework, currentConversationId, availableFrameworks } = get();
+    const { messages, settings, frameworkMode, selectedFramework, currentConversationId, availableFrameworks, prompts } = get();
 
     // 如果没有当前会话，创建一个
     if (!currentConversationId) {
@@ -431,7 +431,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         framework = selectedFramework;
         set({ lastFrameworkMatch: null });
       } else {
-        const recommendation = matchFrameworkRecommendation(content, availableFrameworks);
+        const recommendation = matchFrameworkRecommendation(content, availableFrameworks, prompts);
         framework = recommendation.framework;
         frameworkSelectionReason = recommendation.isFallback
           ? `低置信兜底：${recommendation.reason}`

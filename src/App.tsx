@@ -23,6 +23,7 @@ function App() {
     loadConversations,
     createConversation,
     loadCustomFrameworks,
+    loadPrompts,
     dataError,
     clearDataError,
   } = useAppStore();
@@ -31,6 +32,7 @@ function App() {
     // 加载设置和会话历史
     loadSettings();
     loadCustomFrameworks();
+    loadPrompts();
     loadConversations().then(() => {
       // 如果没有历史会话，创建一个新的
       const { conversations } = useAppStore.getState();
@@ -38,7 +40,7 @@ function App() {
         createConversation();
       }
     }).catch(() => undefined);
-  }, [createConversation, loadConversations, loadSettings, loadCustomFrameworks]); // 只在组件挂载时执行一次
+  }, [createConversation, loadConversations, loadSettings, loadCustomFrameworks, loadPrompts]); // 只在组件挂载时执行一次
 
   const navItems = [
     { id: "chat" as Page, label: "对话", icon: MessageSquare },

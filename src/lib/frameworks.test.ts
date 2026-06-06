@@ -65,4 +65,52 @@ describe("matchFramework", () => {
     expect(result.confidence).toBe("low");
     expect(result.isFallback).toBe(true);
   });
+
+  it("uses high-rated coding history to boost the matching framework", () => {
+    const genericFramework: PromptFramework = {
+      id: "custom:generic",
+      name: "GENERIC",
+      fullName: "Generic Helper",
+      description: "通用任务处理",
+      bestFor: ["通用"],
+      keywords: ["功能", "需求"],
+      template: "【Task】\n___",
+    };
+    const codingFramework: PromptFramework = {
+      id: "custom:coding",
+      name: "CODING",
+      fullName: "Coding Task Builder",
+      description: "工程代码任务",
+      bestFor: ["代码"],
+      keywords: ["代码"],
+      template: "【Code】\n___",
+    };
+
+    const withoutHistory = matchFrameworkRecommendation(
+      "帮我处理这个接口功能需求",
+      [genericFramework, codingFramework]
+    );
+    const withHistory = matchFrameworkRecommendation(
+      "帮我处理这个接口功能需求",
+      [genericFramework, codingFramework],
+      [
+        {
+          title: "接口代码生成提示词",
+          content: "用于生成 TypeScript API 代码和数据库访问逻辑",
+          tags: ["coding", "api", "typescript"],
+          user_input: "实现接口代码",
+          use_case: "代码生成",
+          source_framework: "CODING",
+          is_favorite: true,
+          rating: 5,
+          use_count: 12,
+        },
+      ]
+    );
+
+    expect(withoutHistory.framework.id).toBe("custom:generic");
+    expect(withHistory.framework.id).toBe("custom:coding");
+    expect(withHistory.reason).toContain("历史提示词");
+    expect(withHistory.confidence).not.toBe("low");
+  });
 });
