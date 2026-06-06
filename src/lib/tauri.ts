@@ -88,6 +88,38 @@ async function mockInvoke<T>(command: string, args?: MockRecord): Promise<T> {
       writeJson(STORAGE_KEYS.prompts, prompts.filter((item) => item.id !== id));
       return undefined as T;
     }
+    case "export_data":
+      return {
+        version: 1,
+        exported_at: new Date().toISOString(),
+        conversations: readJson<MockRecord[]>(STORAGE_KEYS.conversations, []),
+        prompts: readJson<MockRecord[]>(STORAGE_KEYS.prompts, []),
+        custom_frameworks: readJson<MockRecord[]>(STORAGE_KEYS.customFrameworks, []),
+        settings: {
+          api_key: "",
+          ...readJson<MockRecord>(STORAGE_KEYS.settings, {}),
+        },
+      } as T;
+    case "import_data": {
+      const backup = getArg<MockRecord>(args, "backup");
+      const mode = getArg<string>(args, "mode");
+      if (!backup || !Array.isArray(backup.prompts) || !Array.isArray(backup.conversations) || !Array.isArray(backup.custom_frameworks)) {
+        throw new Error("导入文件格式无效");
+      }
+      const merge = <TRecord extends MockRecord>(key: string, rows: TRecord[]) => {
+        const existing = mode === "overwrite" ? [] : readJson<TRecord[]>(key, []);
+        writeJson(key, [...rows, ...existing.filter((item) => !rows.some((row) => row.id === item.id))]);
+      };
+      merge(STORAGE_KEYS.conversations, backup.conversations as MockRecord[]);
+      merge(STORAGE_KEYS.prompts, backup.prompts as MockRecord[]);
+      merge(STORAGE_KEYS.customFrameworks, backup.custom_frameworks as MockRecord[]);
+      writeJson(STORAGE_KEYS.settings, { ...((backup.settings as MockRecord) ?? {}), api_key: "" });
+      return {
+        conversations: (backup.conversations as unknown[]).length,
+        prompts: (backup.prompts as unknown[]).length,
+        custom_frameworks: (backup.custom_frameworks as unknown[]).length,
+      } as T;
+    }
     case "get_custom_frameworks":
       return readJson<T>(STORAGE_KEYS.customFrameworks, [] as T);
     case "save_custom_framework": {

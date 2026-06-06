@@ -9,7 +9,13 @@ export interface Prompt {
   content: string;
   category: string;
   tags: string[];
+  is_favorite: boolean;
+  is_pinned: boolean;
+  source_session_id: string | null;
+  source_session_title: string | null;
+  source_framework: string | null;
   created_at: string;
+  updated_at: string | null;
 }
 
 export interface Conversation {
@@ -43,6 +49,32 @@ export interface CustomFramework {
   created_at: string;
 }
 
+export interface DataBackup {
+  version: number;
+  exported_at: string;
+  conversations: Conversation[];
+  prompts: Prompt[];
+  custom_frameworks: CustomFramework[];
+  settings: {
+    api_key?: string;
+    api_endpoint: string;
+    model: string;
+    language: string;
+    temperature: number;
+    max_tokens: number;
+    request_timeout_secs: number;
+    enable_streaming: boolean;
+    framework_mode: string;
+    default_framework: string | null;
+  };
+}
+
+export interface ImportResult {
+  conversations: number;
+  prompts: number;
+  custom_frameworks: number;
+}
+
 interface AppState {
   // 多会话管理
   conversations: Conversation[];
@@ -65,6 +97,8 @@ interface AppState {
   prompts: Prompt[];
   searchQuery: string;
   selectedCategory: string | null;
+  selectedTag: string | null;
+  showFavoritesOnly: boolean;
 
   // Settings
   settings: Settings;
@@ -94,6 +128,10 @@ interface AppState {
   deletePrompt: (id: string) => Promise<void>;
   setSearchQuery: (query: string) => void;
   setSelectedCategory: (category: string | null) => void;
+  setSelectedTag: (tag: string | null) => void;
+  setShowFavoritesOnly: (show: boolean) => void;
+  exportData: () => Promise<DataBackup>;
+  importData: (backup: DataBackup, mode: "merge" | "overwrite") => Promise<ImportResult>;
 
   // Settings Actions
   loadSettings: () => Promise<void>;
@@ -173,6 +211,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   prompts: [],
   searchQuery: "",
   selectedCategory: null,
+  selectedTag: null,
+  showFavoritesOnly: false,
   settings: {
     apiKey: "",
     apiEndpoint: "https://api.deepseek.com",
@@ -564,6 +604,24 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Set selected category
   setSelectedCategory: (category: string | null) => set({ selectedCategory: category }),
+
+  setSelectedTag: (tag: string | null) => set({ selectedTag: tag }),
+
+  setShowFavoritesOnly: (show: boolean) => set({ showFavoritesOnly: show }),
+
+  exportData: async () => safeInvoke<DataBackup>("export_data"),
+
+  importData: async (backup: DataBackup, mode: "merge" | "overwrite") => {
+    const result = await safeInvoke<ImportResult>("import_data", { backup, mode });
+    set({ settingsLoaded: false });
+    await Promise.all([
+      get().loadConversations(),
+      get().loadPrompts(),
+      get().loadCustomFrameworks(),
+      get().loadSettings(),
+    ]);
+    return result;
+  },
 
   // Load settings
   loadSettings: async () => {

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use tokio::sync::Mutex;
 
@@ -16,7 +16,19 @@ pub struct Prompt {
     pub content: String,
     pub category: String,
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub is_favorite: bool,
+    #[serde(default)]
+    pub is_pinned: bool,
+    #[serde(default)]
+    pub source_session_id: Option<String>,
+    #[serde(default)]
+    pub source_session_title: Option<String>,
+    #[serde(default)]
+    pub source_framework: Option<String>,
     pub created_at: String,
+    #[serde(default)]
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -113,6 +125,23 @@ fn normalize_api_endpoint(endpoint: &str) -> Result<String, String> {
     }
 
     Ok(format!("{}/chat/completions", endpoint))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DataBackup {
+    pub version: u32,
+    pub exported_at: String,
+    pub conversations: Vec<Conversation>,
+    pub prompts: Vec<Prompt>,
+    pub custom_frameworks: Vec<CustomFramework>,
+    pub settings: Settings,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ImportResult {
+    pub conversations: usize,
+    pub prompts: usize,
+    pub custom_frameworks: usize,
 }
 
 fn default_temperature() -> f32 {
@@ -283,8 +312,24 @@ async fn wait_until_cancelled(cancel_flag: Arc<AtomicBool>) {
 async fn save_prompt(state: tauri::State<'_, AppState>, prompt: Prompt) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
-        "INSERT OR REPLACE INTO prompts (id, title, content, category, tags, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![prompt.id, prompt.title, prompt.content, prompt.category, serde_json::to_string(&prompt.tags).unwrap(), prompt.created_at],
+        "INSERT OR REPLACE INTO prompts (
+            id, title, content, category, tags, is_favorite, is_pinned,
+            source_session_id, source_session_title, source_framework, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        rusqlite::params![
+            prompt.id,
+            prompt.title,
+            prompt.content,
+            prompt.category,
+            serde_json::to_string(&prompt.tags).map_err(|e| e.to_string())?,
+            prompt.is_favorite,
+            prompt.is_pinned,
+            prompt.source_session_id,
+            prompt.source_session_title,
+            prompt.source_framework,
+            prompt.created_at,
+            prompt.updated_at
+        ],
     ).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -293,7 +338,12 @@ async fn save_prompt(state: tauri::State<'_, AppState>, prompt: Prompt) -> Resul
 async fn get_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<Prompt>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let mut stmt = db
-        .prepare("SELECT id, title, content, category, tags, created_at FROM prompts ORDER BY created_at DESC")
+        .prepare(
+            "SELECT id, title, content, category, tags, is_favorite, is_pinned,
+                source_session_id, source_session_title, source_framework, created_at, updated_at
+            FROM prompts
+            ORDER BY is_pinned DESC, created_at DESC"
+        )
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], |row| {
@@ -303,20 +353,45 @@ async fn get_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<Prompt>, S
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
-                row.get::<_, String>(5)?,
+                row.get::<_, bool>(5)?,
+                row.get::<_, bool>(6)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, String>(10)?,
+                row.get::<_, Option<String>>(11)?,
             ))
         })
         .map_err(|e| e.to_string())?;
     let mut prompts = Vec::new();
     for row in rows {
-        let (id, title, content, category, tags_str, created_at) = row.map_err(|e| e.to_string())?;
+        let (
+            id,
+            title,
+            content,
+            category,
+            tags_str,
+            is_favorite,
+            is_pinned,
+            source_session_id,
+            source_session_title,
+            source_framework,
+            created_at,
+            updated_at,
+        ) = row.map_err(|e| e.to_string())?;
         prompts.push(Prompt {
             tags: parse_json_field("prompt", &id, "tags", &tags_str)?,
             id,
             title,
             content,
             category,
+            is_favorite,
+            is_pinned,
+            source_session_id,
+            source_session_title,
+            source_framework,
             created_at,
+            updated_at,
         });
     }
     Ok(prompts)
@@ -447,6 +522,91 @@ async fn delete_custom_framework(state: tauri::State<'_, AppState>, id: String) 
 }
 
 #[tauri::command]
+async fn export_data(state: tauri::State<'_, AppState>) -> Result<DataBackup, String> {
+    let mut settings = get_settings().await?;
+    settings.api_key.clear();
+
+    Ok(DataBackup {
+        version: 1,
+        exported_at: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs().to_string())
+            .unwrap_or_else(|_| "0".to_string()),
+        conversations: get_conversations(state.clone()).await?,
+        prompts: get_prompts(state.clone()).await?,
+        custom_frameworks: get_custom_frameworks(state).await?,
+        settings,
+    })
+}
+
+fn validate_backup(backup: &DataBackup) -> Result<(), String> {
+    if backup.version == 0 {
+        return Err("导入文件版本无效".to_string());
+    }
+    for prompt in &backup.prompts {
+        if prompt.id.trim().is_empty() || prompt.title.trim().is_empty() {
+            return Err("导入文件包含无效提示词：id/title 不能为空".to_string());
+        }
+    }
+    for conv in &backup.conversations {
+        if conv.id.trim().is_empty() || conv.title.trim().is_empty() {
+            return Err("导入文件包含无效会话：id/title 不能为空".to_string());
+        }
+    }
+    for framework in &backup.custom_frameworks {
+        if framework.id.trim().is_empty() || framework.name.trim().is_empty() || framework.template.trim().is_empty() {
+            return Err("导入文件包含无效自定义框架：id/name/template 不能为空".to_string());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn import_data(
+    state: tauri::State<'_, AppState>,
+    backup: DataBackup,
+    mode: String,
+) -> Result<ImportResult, String> {
+    validate_backup(&backup)?;
+    let overwrite = mode == "overwrite";
+
+    {
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        if overwrite {
+            db.execute("DELETE FROM prompts", []).map_err(|e| e.to_string())?;
+            db.execute("DELETE FROM conversations", []).map_err(|e| e.to_string())?;
+            db.execute("DELETE FROM custom_frameworks", []).map_err(|e| e.to_string())?;
+        }
+    }
+
+    let prompt_count = backup.prompts.len();
+    let conversation_count = backup.conversations.len();
+    let framework_count = backup.custom_frameworks.len();
+
+    for prompt in backup.prompts {
+        save_prompt(state.clone(), prompt).await?;
+    }
+    for conversation in backup.conversations {
+        save_conversation(state.clone(), conversation).await?;
+    }
+    for framework in backup.custom_frameworks {
+        save_custom_framework(state.clone(), framework).await?;
+    }
+
+    let mut settings = backup.settings;
+    settings.api_key.clear();
+    if !settings.api_endpoint.trim().is_empty() {
+        save_non_sensitive_settings(settings)?;
+    }
+
+    Ok(ImportResult {
+        conversations: conversation_count,
+        prompts: prompt_count,
+        custom_frameworks: framework_count,
+    })
+}
+
+#[tauri::command]
 async fn get_settings() -> Result<Settings, String> {
     let settings_path = dirs::config_dir()
         .ok_or("Cannot find config dir")?
@@ -508,6 +668,23 @@ async fn save_settings(settings: Settings) -> Result<(), String> {
     let content = serde_json::to_string_pretty(&settings_to_save).map_err(|e| e.to_string())?;
     std::fs::write(&file_path, content).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn save_non_sensitive_settings(mut settings: Settings) -> Result<(), String> {
+    let settings_path = dirs::config_dir()
+        .ok_or("Cannot find config dir")?
+        .join("promptcraft");
+    std::fs::create_dir_all(&settings_path).map_err(|e| e.to_string())?;
+    let file_path = settings_path.join("settings.json");
+
+    settings.api_key.clear();
+    settings.api_endpoint = normalize_api_endpoint(&settings.api_endpoint)?;
+    settings.temperature = clamp_temperature(settings.temperature);
+    settings.max_tokens = clamp_max_tokens(settings.max_tokens);
+    settings.request_timeout_secs = clamp_timeout_secs(settings.request_timeout_secs);
+
+    let content = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    std::fs::write(&file_path, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -660,6 +837,12 @@ pub fn run() {
                     content TEXT NOT NULL,
                     category TEXT,
                     tags TEXT,
+                    is_favorite INTEGER NOT NULL DEFAULT 0,
+                    is_pinned INTEGER NOT NULL DEFAULT 0,
+                    source_session_id TEXT,
+                    source_session_title TEXT,
+                    source_framework TEXT,
+                    updated_at DATETIME,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE TABLE IF NOT EXISTS conversations (
@@ -683,6 +866,12 @@ pub fn run() {
 
             let _ = db.execute("ALTER TABLE conversations ADD COLUMN title TEXT NOT NULL DEFAULT '新对话'", rusqlite::params![]);
             let _ = db.execute("ALTER TABLE conversations ADD COLUMN framework TEXT", rusqlite::params![]);
+            let _ = db.execute("ALTER TABLE prompts ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0", rusqlite::params![]);
+            let _ = db.execute("ALTER TABLE prompts ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0", rusqlite::params![]);
+            let _ = db.execute("ALTER TABLE prompts ADD COLUMN source_session_id TEXT", rusqlite::params![]);
+            let _ = db.execute("ALTER TABLE prompts ADD COLUMN source_session_title TEXT", rusqlite::params![]);
+            let _ = db.execute("ALTER TABLE prompts ADD COLUMN source_framework TEXT", rusqlite::params![]);
+            let _ = db.execute("ALTER TABLE prompts ADD COLUMN updated_at DATETIME", rusqlite::params![]);
 
             app.manage(AppState {
                 db: std::sync::Mutex::new(db),
@@ -710,6 +899,8 @@ pub fn run() {
             delete_custom_framework,
             get_settings,
             save_settings,
+            export_data,
+            import_data,
             call_ai_api,
             cancel_ai_request,
         ])

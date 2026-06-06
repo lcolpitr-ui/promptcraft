@@ -1,13 +1,16 @@
-import { useEffect, useState, useCallback } from "react";
-import { useAppStore } from "../stores/appStore";
-import { Save, Eye, EyeOff, Check, AlertCircle } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useAppStore, type DataBackup } from "../stores/appStore";
+import { Save, Eye, EyeOff, Check, AlertCircle, Download, Upload } from "lucide-react";
 
 export function Settings() {
-  const { settings, loadSettings, updateSettings } = useAppStore();
+  const { settings, loadSettings, updateSettings, exportData, importData } = useAppStore();
   const [showApiKey, setShowApiKey] = useState(false);
   const [localSettings, setLocalSettings] = useState(settings);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const [importMode, setImportMode] = useState<"merge" | "overwrite">("merge");
+  const [dataStatus, setDataStatus] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -53,6 +56,54 @@ export function Settings() {
     ? "建议使用 HTTPS 端点以确保安全"
     : "";
 
+  const handleExportData = async () => {
+    try {
+      const backup = await exportData();
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `promptcraft-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setDataStatus("数据已导出，API Key 未包含在备份中。");
+    } catch (error) {
+      console.error("Failed to export data:", error);
+      setDataStatus(`导出失败：${error}`);
+    }
+  };
+
+  const validateBackup = (value: unknown): value is DataBackup => {
+    if (!value || typeof value !== "object") return false;
+    const backup = value as Partial<DataBackup>;
+    return Array.isArray(backup.conversations)
+      && Array.isArray(backup.prompts)
+      && Array.isArray(backup.custom_frameworks)
+      && !!backup.settings;
+  };
+
+  const handleImportFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!validateBackup(parsed)) {
+        throw new Error("备份文件格式无效");
+      }
+      parsed.settings.api_key = "";
+      const result = await importData(parsed, importMode);
+      setDataStatus(`导入完成：${result.conversations} 个会话，${result.prompts} 条提示词，${result.custom_frameworks} 个自定义框架。`);
+    } catch (error) {
+      console.error("Failed to import data:", error);
+      setDataStatus(`导入失败：${error}`);
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
   return (
     <div className="flex h-full min-w-0 flex-col">
       <div className="border-b border-border p-4">
@@ -80,6 +131,9 @@ export function Settings() {
           </div>
           <p className="text-xs text-muted-foreground text-wrap-anywhere">
             支持 OpenAI、Claude、Deepseek 等兼容 OpenAI 格式的 API
+          </p>
+          <p className="text-xs text-muted-foreground text-wrap-anywhere">
+            API Key 使用系统凭据存储保存；settings.json 和数据导出文件不会包含 API Key。设备账号被他人访问时仍可能通过系统凭据读取，请注意本机账号安全。
           </p>
         </div>
 
@@ -203,6 +257,55 @@ export function Settings() {
             <option value="zh">中文</option>
             <option value="en">English</option>
           </select>
+        </div>
+
+        {/* Local data */}
+        <div className="space-y-4 rounded-lg border border-border p-4">
+          <div>
+            <h2 className="text-sm font-medium">本地数据</h2>
+            <p className="mt-1 text-xs text-muted-foreground text-wrap-anywhere">
+              可导出会话、提示词库、自定义框架和非敏感设置。API Key 不会导出。
+            </p>
+          </div>
+
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <button
+              onClick={handleExportData}
+              className="flex shrink-0 items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm text-secondary-foreground transition-colors hover:bg-secondary/80"
+            >
+              <Download className="h-4 w-4" />
+              导出数据
+            </button>
+
+            <select
+              value={importMode}
+              onChange={(event) => setImportMode(event.target.value as "merge" | "overwrite")}
+              className="rounded-lg border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="merge">合并导入</option>
+              <option value="overwrite">覆盖导入</option>
+            </select>
+
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex shrink-0 items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm text-secondary-foreground transition-colors hover:bg-secondary/80"
+            >
+              <Upload className="h-4 w-4" />
+              导入数据
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void handleImportFile(file);
+              }}
+            />
+          </div>
+
+          {dataStatus && <p className="text-xs text-muted-foreground text-wrap-anywhere">{dataStatus}</p>}
         </div>
 
         {/* Save button */}

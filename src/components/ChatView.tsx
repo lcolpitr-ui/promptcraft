@@ -18,6 +18,7 @@ export function ChatView() {
     availableFrameworks,
     lastFrameworkMatch,
     lastContextTrim,
+    currentConversation,
   } = useAppStore();
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -62,8 +63,17 @@ export function ChatView() {
       title: title || "未命名提示词",
       content,
       category: "对话生成",
-      tags: [selectedFramework?.name || "自动"],
+      tags: [
+        selectedFramework?.name || lastFrameworkMatch?.framework.name || "自动",
+        "聊天保存",
+      ],
+      is_favorite: false,
+      is_pinned: false,
+      source_session_id: currentConversation?.id || null,
+      source_session_title: currentConversation?.title || null,
+      source_framework: selectedFramework?.name || lastFrameworkMatch?.framework.name || null,
       created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
     savePrompt(prompt);
   };
