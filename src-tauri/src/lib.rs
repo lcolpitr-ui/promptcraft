@@ -42,6 +42,14 @@ pub struct Settings {
     pub api_endpoint: String,
     pub model: String,
     pub language: String,
+    #[serde(default = "default_temperature")]
+    pub temperature: f32,
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
+    #[serde(default = "default_request_timeout_secs")]
+    pub request_timeout_secs: u64,
+    #[serde(default)]
+    pub enable_streaming: bool,
     #[serde(default)]
     pub framework_mode: String,
     #[serde(default)]
@@ -55,12 +63,21 @@ pub struct AiRequest {
     pub api_key: String,
     pub api_endpoint: String,
     pub request_id: String,
+    #[serde(default = "default_temperature")]
+    pub temperature: f32,
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
+    #[serde(default = "default_request_timeout_secs")]
+    pub request_timeout_secs: u64,
+    #[serde(default)]
+    pub stream: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AiResponse {
     pub content: String,
     pub request_id: String,
+    pub stream_used: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -96,6 +113,117 @@ fn normalize_api_endpoint(endpoint: &str) -> Result<String, String> {
     }
 
     Ok(format!("{}/chat/completions", endpoint))
+}
+
+fn default_temperature() -> f32 {
+    0.7
+}
+
+fn default_max_tokens() -> u32 {
+    2000
+}
+
+fn default_request_timeout_secs() -> u64 {
+    60
+}
+
+fn clamp_temperature(value: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(0.0, 2.0)
+    } else {
+        default_temperature()
+    }
+}
+
+fn clamp_max_tokens(value: u32) -> u32 {
+    value.clamp(1, 128_000)
+}
+
+fn clamp_timeout_secs(value: u64) -> u64 {
+    value.clamp(5, 300)
+}
+
+fn preview_text(value: &str) -> String {
+    value.chars().take(500).collect()
+}
+
+fn extract_error_message(json: &serde_json::Value) -> Option<String> {
+    json.get("error")
+        .and_then(|error| {
+            error.get("message")
+                .or_else(|| error.get("detail"))
+                .and_then(|value| value.as_str())
+                .or_else(|| error.as_str())
+        })
+        .map(ToString::to_string)
+}
+
+fn format_api_error(status: reqwest::StatusCode, error_text: &str) -> String {
+    let provider_message = serde_json::from_str::<serde_json::Value>(error_text)
+        .ok()
+        .and_then(|json| extract_error_message(&json))
+        .unwrap_or_else(|| preview_text(error_text));
+    let detail = if provider_message.trim().is_empty() {
+        "服务商没有返回错误详情".to_string()
+    } else {
+        provider_message
+    };
+
+    match status.as_u16() {
+        401 => format!("API Key 无效或已过期，请检查设置中的 API Key。服务商返回：{}", detail),
+        403 => format!("当前 API Key 没有权限、额度不足或账号受限。服务商返回：{}", detail),
+        404 => format!("模型或 API Endpoint 不存在，请检查模型名称和端点地址。服务商返回：{}", detail),
+        429 => format!("请求过于频繁或额度达到限制，请稍后重试。服务商返回：{}", detail),
+        400 => format!("请求参数不被服务商接受，请检查模型、temperature、max tokens 和 endpoint。服务商返回：{}", detail),
+        _ => format!("API 返回错误 ({}): {}", status, detail),
+    }
+}
+
+fn extract_response_content(json: &serde_json::Value) -> Result<String, String> {
+    if let Some(content) = json
+        .get("choices")
+        .and_then(|choices| choices.get(0))
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(|content| content.as_str())
+    {
+        return Ok(content.to_string());
+    }
+
+    if let Some(content) = json
+        .get("choices")
+        .and_then(|choices| choices.get(0))
+        .and_then(|choice| choice.get("text"))
+        .and_then(|content| content.as_str())
+    {
+        return Ok(content.to_string());
+    }
+
+    if let Some(content) = json.get("output_text").and_then(|content| content.as_str()) {
+        return Ok(content.to_string());
+    }
+
+    if let Some(output) = json.get("output").and_then(|output| output.as_array()) {
+        let text = output
+            .iter()
+            .filter_map(|item| item.get("content").and_then(|content| content.as_array()))
+            .flat_map(|content| content.iter())
+            .filter_map(|part| {
+                part.get("text")
+                    .or_else(|| part.get("content"))
+                    .and_then(|value| value.as_str())
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        if !text.trim().is_empty() {
+            return Ok(text);
+        }
+    }
+
+    Err(format!(
+        "响应格式不兼容：没有找到 choices[0].message.content、choices[0].text 或 output_text。响应预览：{}",
+        preview_text(&json.to_string())
+    ))
 }
 
 fn parse_json_field<T>(record_type: &str, record_id: &str, field_name: &str, value: &str) -> Result<T, String>
@@ -347,6 +475,10 @@ async fn get_settings() -> Result<Settings, String> {
             api_endpoint: "https://api.deepseek.com".to_string(),
             model: "deepseek-chat".to_string(),
             language: "zh".to_string(),
+            temperature: default_temperature(),
+            max_tokens: default_max_tokens(),
+            request_timeout_secs: default_request_timeout_secs(),
+            enable_streaming: false,
             framework_mode: "auto".to_string(),
             default_framework: None,
         })
@@ -363,6 +495,9 @@ async fn save_settings(settings: Settings) -> Result<(), String> {
 
     let mut settings_to_save = settings;
     settings_to_save.api_endpoint = normalize_api_endpoint(&settings_to_save.api_endpoint)?;
+    settings_to_save.temperature = clamp_temperature(settings_to_save.temperature);
+    settings_to_save.max_tokens = clamp_max_tokens(settings_to_save.max_tokens);
+    settings_to_save.request_timeout_secs = clamp_timeout_secs(settings_to_save.request_timeout_secs);
     if settings_to_save.api_key.trim().is_empty() {
         delete_api_key()?;
     } else {
@@ -400,7 +535,7 @@ async fn call_ai_api(
     // 创建 HTTP 客户端
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(clamp_timeout_secs(request.request_timeout_secs)))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
@@ -418,8 +553,9 @@ async fn call_ai_api(
     let body = serde_json::json!({
         "model": request.model,
         "messages": messages_json,
-        "temperature": 0.7,
-        "max_tokens": 2000
+        "temperature": clamp_temperature(request.temperature),
+        "max_tokens": clamp_max_tokens(request.max_tokens),
+        "stream": false
     });
 
     // 发送请求
@@ -436,9 +572,9 @@ async fn call_ai_api(
             if cancel_flag.load(Ordering::SeqCst) {
                 "REQUEST_CANCELLED".to_string()
             } else if e.is_timeout() {
-                "请求超时，请检查网络或稍后重试".to_string()
+                format!("网络超时：请求超过 {} 秒未完成，请检查网络、endpoint 或调大请求超时。", clamp_timeout_secs(request.request_timeout_secs))
             } else if e.is_connect() {
-                format!("连接失败: {}", e)
+                format!("连接失败：无法连接到 API Endpoint，请检查地址是否正确。详细错误：{}", e)
             } else {
                 format!("请求失败: {}", e)
             }
@@ -459,7 +595,7 @@ async fn call_ai_api(
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_default();
         state.task_manager.remove_task(&request_id).await;
-        return Err(format!("API 返回错误 ({}): {}", status, error_text));
+        return Err(format_api_error(status, &error_text));
     }
 
     let response_text = tokio::select! {
@@ -477,12 +613,9 @@ async fn call_ai_api(
     }
 
     let json: serde_json::Value = serde_json::from_str(&response_text)
-        .map_err(|e| format!("解析响应失败: {} - 原始响应: {}", e, &response_text[..200.min(response_text.len())]))?;
+        .map_err(|e| format!("响应格式不兼容：服务商没有返回有效 JSON。解析错误：{}；响应预览：{}", e, preview_text(&response_text)))?;
 
-    let content = json["choices"][0]["message"]["content"]
-        .as_str()
-        .ok_or("无法从响应中提取内容")?
-        .to_string();
+    let content = extract_response_content(&json)?;
 
     // 清理任务
     state.task_manager.remove_task(&request_id).await;
@@ -490,6 +623,7 @@ async fn call_ai_api(
     Ok(AiResponse {
         content,
         request_id,
+        stream_used: false,
     })
 }
 

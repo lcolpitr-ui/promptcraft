@@ -30,7 +30,7 @@ describe("appStore cancellation", () => {
   });
 
   it("does not write a cancelled AI result back to the conversation", async () => {
-    let resolveAi!: (value: { content: string; request_id: string }) => void;
+    let resolveAi!: (value: { content: string; request_id: string; stream_used: boolean }) => void;
     mockedSendMessage.mockReturnValue(
       new Promise((resolve) => {
         resolveAi = resolve;
@@ -44,7 +44,7 @@ describe("appStore cancellation", () => {
     });
 
     await useAppStore.getState().stopGeneration();
-    resolveAi({ content: "这个结果不应该写入", request_id: "request-1" });
+    resolveAi({ content: "这个结果不应该写入", request_id: "request-1", stream_used: false });
     await pendingSend;
 
     const messages = useAppStore.getState().messages;

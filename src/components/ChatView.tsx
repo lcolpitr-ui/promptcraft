@@ -17,6 +17,7 @@ export function ChatView() {
     selectedFramework,
     availableFrameworks,
     lastFrameworkMatch,
+    lastContextTrim,
   } = useAppStore();
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -83,6 +84,7 @@ export function ChatView() {
         <FrameworkSelector />
         <div className="min-w-0 text-xs text-muted-foreground text-wrap-anywhere">
           {frameworkStatus}
+          {lastContextTrim?.trimmed ? ` · 已裁剪上下文 ${lastContextTrim.sentMessages}/${lastContextTrim.originalMessages}` : ""}
         </div>
       </div>
 

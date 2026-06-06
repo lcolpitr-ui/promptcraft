@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { sendMessage, type ChatMessage } from "../lib/ai";
+import { sendMessage, type ChatMessage, type ContextTrimInfo } from "../lib/ai";
 import { FRAMEWORKS, matchFrameworkRecommendation, type FrameworkMatchResult, type PromptFramework } from "../lib/frameworks";
 import { safeInvoke } from "../lib/tauri";
 
@@ -26,6 +26,10 @@ export interface Settings {
   apiEndpoint: string;
   model: string;
   language: string;
+  temperature: number;
+  maxTokens: number;
+  requestTimeoutSecs: number;
+  enableStreaming: boolean;
   frameworkMode: "auto" | "manual";
   defaultFramework: string | null;
 }
@@ -55,6 +59,7 @@ interface AppState {
   // 当前消息
   messages: ChatMessage[];
   isLoading: boolean;
+  lastContextTrim: ContextTrimInfo | null;
 
   // Prompt library
   prompts: Prompt[];
@@ -123,6 +128,35 @@ function getAvailableFrameworks(customFrameworks: CustomFramework[]): PromptFram
   return [...FRAMEWORKS, ...customFrameworks.map(customFrameworkToPromptFramework)];
 }
 
+function getUserFacingAiError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error("AI request failed:", error);
+
+  if (message.includes("API Key 缺失")) {
+    return "API Key 缺失：请先到设置页填写并保存 API Key。";
+  }
+  if (message.includes("401") || message.includes("API Key 无效")) {
+    return "API Key 无效或已过期：请检查设置中的 API Key 是否正确。";
+  }
+  if (message.includes("403") || message.includes("没有权限") || message.includes("额度不足")) {
+    return "当前 API Key 没有权限、余额不足或账号受限，请检查服务商控制台。";
+  }
+  if (message.includes("404") || message.includes("模型") || message.includes("Endpoint 不存在")) {
+    return "模型或 API Endpoint 不存在：请检查设置里的模型名称和 API 端点。";
+  }
+  if (message.includes("Endpoint") || message.includes("API 端点")) {
+    return `API Endpoint 配置有误：${message}`;
+  }
+  if (message.includes("超时")) {
+    return "网络超时：请求没有在设定时间内完成，请检查网络或调大请求超时。";
+  }
+  if (message.includes("响应格式不兼容") || message.includes("有效 JSON") || message.includes("提取内容")) {
+    return `响应格式不兼容：服务商返回的数据不是标准 OpenAI-compatible chat completions 格式。${message}`;
+  }
+
+  return `抱歉，AI 请求失败：${message}`;
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial state
   conversations: [],
@@ -135,6 +169,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   availableFrameworks: FRAMEWORKS,
   messages: [],
   isLoading: false,
+  lastContextTrim: null,
   prompts: [],
   searchQuery: "",
   selectedCategory: null,
@@ -143,6 +178,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     apiEndpoint: "https://api.deepseek.com",
     model: "deepseek-chat",
     language: "zh",
+    temperature: 0.7,
+    maxTokens: 2000,
+    requestTimeoutSecs: 60,
+    enableStreaming: false,
     frameworkMode: "auto",
     defaultFramework: null,
   },
@@ -369,7 +408,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         framework,
         requestId,
         availableFrameworks,
-        frameworkSelectionReason
+        frameworkSelectionReason,
+        (trimInfo) => set({ lastContextTrim: trimInfo })
       );
 
       // 检查是否被取消（后端返回 REQUEST_CANCELLED）
@@ -427,9 +467,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
+      const userMessage = getUserFacingAiError(error);
       const errorMessage: ChatMessage = {
         role: "assistant",
-        content: `抱歉，发生了错误：${error}`,
+        content: userMessage,
       };
       const finalMessages = [...newMessages, errorMessage];
       set({ messages: finalMessages, isLoading: false });
@@ -533,6 +574,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         api_endpoint: string;
         model: string;
         language: string;
+        temperature?: number;
+        max_tokens?: number;
+        request_timeout_secs?: number;
+        enable_streaming?: boolean;
         framework_mode?: string;
         default_framework?: string;
       }>("get_settings");
@@ -542,6 +587,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           apiEndpoint: raw.api_endpoint || "https://api.deepseek.com",
           model: raw.model || "deepseek-chat",
           language: raw.language || "zh",
+          temperature: raw.temperature ?? 0.7,
+          maxTokens: raw.max_tokens ?? 2000,
+          requestTimeoutSecs: raw.request_timeout_secs ?? 60,
+          enableStreaming: raw.enable_streaming ?? false,
           frameworkMode: (raw.framework_mode as "auto" | "manual") || "auto",
           defaultFramework: raw.default_framework || null,
         },
@@ -567,6 +616,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           api_endpoint: updatedSettings.apiEndpoint,
           model: updatedSettings.model,
           language: updatedSettings.language,
+          temperature: updatedSettings.temperature,
+          max_tokens: updatedSettings.maxTokens,
+          request_timeout_secs: updatedSettings.requestTimeoutSecs,
+          enable_streaming: updatedSettings.enableStreaming,
           framework_mode: updatedSettings.frameworkMode,
           default_framework: updatedSettings.defaultFramework,
         },

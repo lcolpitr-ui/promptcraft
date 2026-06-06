@@ -88,7 +88,11 @@ export function FrameworkSubmit() {
       const response = await sendMessage(prompt, [], {
         apiKey: settings.apiKey,
         apiEndpoint: settings.apiEndpoint,
-        model: settings.model
+        model: settings.model,
+        temperature: settings.temperature,
+        maxTokens: settings.maxTokens,
+        requestTimeoutSecs: settings.requestTimeoutSecs,
+        enableStreaming: settings.enableStreaming,
       });
 
       if (!response) {

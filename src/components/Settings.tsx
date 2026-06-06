@@ -122,6 +122,76 @@ export function Settings() {
           </p>
         </div>
 
+        {/* AI parameters */}
+        <div className="space-y-4 rounded-lg border border-border p-4">
+          <div>
+            <h2 className="text-sm font-medium">AI 参数</h2>
+            <p className="mt-1 text-xs text-muted-foreground text-wrap-anywhere">
+              这些参数会随每次 AI 请求发送到 OpenAI-compatible 服务。
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-sm font-medium">Temperature</label>
+              <span className="text-xs text-muted-foreground">{localSettings.temperature.toFixed(1)}</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="2"
+              step="0.1"
+              value={localSettings.temperature}
+              onChange={(e) => handleSettingsChange({ temperature: Number(e.target.value) })}
+              className="w-full"
+            />
+            <p className="text-xs text-muted-foreground text-wrap-anywhere">
+              越低越稳定，越高越发散。建议提示词打磨使用 0.3 - 0.8。
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Max output tokens</label>
+              <input
+                type="number"
+                min="1"
+                max="128000"
+                value={localSettings.maxTokens}
+                onChange={(e) => handleSettingsChange({ maxTokens: Number(e.target.value) || 2000 })}
+                className="w-full rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Request timeout 秒</label>
+              <input
+                type="number"
+                min="5"
+                max="300"
+                value={localSettings.requestTimeoutSecs}
+                onChange={(e) => handleSettingsChange({ requestTimeoutSecs: Number(e.target.value) || 60 })}
+                className="w-full rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          </div>
+
+          <label className="flex min-w-0 items-start gap-3 rounded-lg border border-border p-3 text-sm">
+            <input
+              type="checkbox"
+              checked={localSettings.enableStreaming}
+              onChange={(e) => handleSettingsChange({ enableStreaming: e.target.checked })}
+              className="mt-0.5"
+            />
+            <span className="min-w-0">
+              <span className="block font-medium">启用流式输出</span>
+              <span className="block text-xs text-muted-foreground text-wrap-anywhere">
+                当前 Tauri 命令链路会使用非流式兼容 fallback，设置会先保存并随请求传递，后续可接入真正流式渲染。
+              </span>
+            </span>
+          </label>
+        </div>
+
         {/* Language */}
         <div className="space-y-2">
           <label className="text-sm font-medium">语言</label>
