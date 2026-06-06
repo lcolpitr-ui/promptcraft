@@ -55,35 +55,35 @@ export function ChatView() {
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-w-0 flex-col">
       {/* Header with framework selector - 固定在顶部 */}
-      <div className="border-b border-border px-4 py-3 flex items-center justify-between bg-background relative z-10">
+      <div className="relative z-10 flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-background px-4 py-3">
         <FrameworkSelector />
-        <div className="text-xs text-muted-foreground">
+        <div className="min-w-0 text-xs text-muted-foreground text-wrap-anywhere">
           {selectedFramework ? `使用 ${selectedFramework.name} 框架` : "自动匹配框架"}
         </div>
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="min-w-0 flex-1 overflow-y-auto p-4">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-start pt-16 text-muted-foreground">
+          <div className="mx-auto flex w-full max-w-2xl flex-col items-center justify-start pt-16 text-muted-foreground">
             <Sparkles className="w-12 h-12 mb-4 text-primary/50" />
-            <h2 className="text-xl font-semibold mb-2 text-foreground">
+            <h2 className="mb-2 text-center text-xl font-semibold text-foreground text-wrap-anywhere">
               开始打磨你的提示词
             </h2>
-            <p className="mb-2 text-center max-w-md text-sm">
+            <p className="mb-2 max-w-md text-center text-sm text-wrap-anywhere">
               描述你的想法，AI 会帮你追问细节，最终生成高质量的结构化提示词
             </p>
-            <p className="mb-8 text-xs text-muted-foreground">
+            <p className="mb-8 text-center text-xs text-muted-foreground text-wrap-anywhere">
               当前模式：{selectedFramework ? `手动 - ${selectedFramework.name}` : "自动匹配"}
             </p>
-            <div className="grid grid-cols-2 gap-3 max-w-lg w-full">
+            <div className="grid w-full max-w-lg grid-cols-1 gap-3 sm:grid-cols-2">
               {suggestions.map((s) => (
                 <button
                   key={s}
                   onClick={() => setInput(s)}
-                  className="p-3 text-left text-sm rounded-lg border border-border hover:bg-accent transition-colors"
+                  className="min-w-0 rounded-lg border border-border p-3 text-left text-sm transition-colors hover:bg-accent text-wrap-anywhere"
                 >
                   {s}
                 </button>
@@ -91,34 +91,34 @@ export function ChatView() {
             </div>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             {messages.map((msg, i) => (
               <div
                 key={i}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                className={`flex min-w-0 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                  className={`min-w-0 max-w-[85%] rounded-2xl px-4 py-3 text-wrap-anywhere sm:max-w-[80%] ${
                     msg.role === "user"
                       ? "bg-primary text-primary-foreground"
                       : "bg-card border border-border"
                   }`}
                 >
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                  <div className="prose prose-sm dark:prose-invert max-w-none text-wrap-anywhere [&_*]:text-wrap-anywhere">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
                   {msg.role === "assistant" && (
-                    <div className="flex gap-2 mt-2 pt-2 border-t border-border">
+                    <div className="mt-2 flex flex-wrap gap-2 border-t border-border pt-2">
                       <button
                         onClick={() => handleCopy(msg.content)}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                       >
                         <Copy className="w-3 h-3" />
                         复制
                       </button>
                       <button
                         onClick={() => handleSaveAsPrompt(msg.content)}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                       >
                         <Save className="w-3 h-3" />
                         保存
@@ -149,10 +149,10 @@ export function ChatView() {
 
       {/* Input area */}
       <div className="border-t border-border p-4">
-        <div className="flex gap-2">
+        <div className="flex min-w-0 gap-2">
           <button
             onClick={clearCurrentChat}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors"
+            className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             title="清空对话"
           >
             <Trash2 className="w-5 h-5" />
@@ -163,13 +163,13 @@ export function ChatView() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={selectedFramework ? `使用 ${selectedFramework.name} 框架生成提示词...` : "描述你的想法..."}
-            className="flex-1 resize-none rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring min-h-[44px] max-h-[120px]"
+            className="min-h-[44px] min-w-0 flex-1 resize-none rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring max-h-[120px] text-wrap-anywhere"
             rows={1}
           />
           {isLoading ? (
             <button
               onClick={stopGeneration}
-              className="p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              className="shrink-0 rounded-lg bg-red-500 p-2 text-white transition-colors hover:bg-red-600"
               title="停止生成"
             >
               <Square className="w-5 h-5" />
@@ -178,7 +178,7 @@ export function ChatView() {
             <button
               onClick={handleSend}
               disabled={!input.trim()}
-              className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="shrink-0 rounded-lg bg-primary p-2 text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Send className="w-5 h-5" />
             </button>

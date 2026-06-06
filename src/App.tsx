@@ -38,15 +38,15 @@ function App() {
   ];
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen min-w-0 overflow-hidden bg-background">
       {/* Sidebar */}
-      <nav className="w-64 border-r border-border flex flex-col">
+      <nav className="flex w-16 shrink-0 flex-col border-r border-border sm:w-64">
         <div className="p-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-primary" />
-            <h1 className="text-lg font-bold">PromptCraft</h1>
+          <div className="flex min-w-0 items-center justify-center gap-2 sm:justify-start">
+            <Sparkles className="h-6 w-6 shrink-0 text-primary" />
+            <h1 className="hidden min-w-0 text-lg font-bold sm:block sm:truncate">PromptCraft</h1>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">AI 提示词打磨工具</p>
+          <p className="mt-1 hidden text-xs text-muted-foreground sm:block sm:truncate">AI 提示词打磨工具</p>
         </div>
 
         {/* Navigation */}
@@ -57,14 +57,14 @@ function App() {
               <button
                 key={item.id}
                 onClick={() => setCurrentPage(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                className={`w-full min-w-0 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                   currentPage === item.id
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 }`}
               >
-                <Icon className="w-4 h-4" />
-                {item.label}
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="hidden truncate sm:inline">{item.label}</span>
               </button>
             );
           })}
@@ -72,20 +72,20 @@ function App() {
 
         {/* Conversation List */}
         {currentPage === "chat" && (
-          <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="hidden flex-1 overflow-hidden sm:flex sm:flex-col">
             <div className="flex-1 overflow-y-auto">
               <ConversationList />
             </div>
           </div>
         )}
 
-        <div className="p-4 border-t border-border">
-          <p className="text-xs text-muted-foreground text-center">v0.2.0</p>
+        <div className="hidden border-t border-border p-4 sm:block">
+          <p className="text-xs text-muted-foreground text-center">v0.2.2</p>
         </div>
       </nav>
 
       {/* Main content */}
-      <main className="flex-1 overflow-hidden">
+      <main className="min-w-0 flex-1 overflow-hidden">
         {currentPage === "chat" && <ChatView />}
         {currentPage === "library" && <PromptLibrary />}
         {currentPage === "frameworks" && <FrameworkSubmit />}

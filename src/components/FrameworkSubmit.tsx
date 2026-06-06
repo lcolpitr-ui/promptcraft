@@ -166,34 +166,34 @@ export function FrameworkSubmit() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-w-0 flex-col">
       <div className="border-b border-border p-4">
-        <h1 className="text-xl font-semibold">框架管理</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <h1 className="text-xl font-semibold text-wrap-anywhere">框架管理</h1>
+        <p className="mt-1 text-sm text-muted-foreground text-wrap-anywhere">
           查看内置框架、AI 生成新框架或手动提交
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      <div className="min-w-0 flex-1 overflow-y-auto p-4 space-y-6">
         {/* 内置框架列表 */}
         <div>
           <button
             onClick={() => setShowExisting(!showExisting)}
-            className="flex items-center gap-2 text-sm font-medium mb-3"
+            className="mb-3 flex min-w-0 items-center gap-2 text-sm font-medium text-wrap-anywhere"
           >
-            <Sparkles className="w-4 h-4" />
-            内置框架 ({FRAMEWORKS.length})
+            <Sparkles className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 text-wrap-anywhere">内置框架 ({FRAMEWORKS.length})</span>
           </button>
 
           {showExisting && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
               {FRAMEWORKS.map((fw) => (
-                <div key={fw.id} className="border border-border rounded-lg p-3">
-                  <div className="font-medium text-sm">{fw.name}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{fw.description}</div>
-                  <div className="flex flex-wrap gap-1 mt-2">
+                <div key={fw.id} className="min-w-0 rounded-lg border border-border p-3">
+                  <div className="text-sm font-medium text-wrap-anywhere">{fw.name}</div>
+                  <div className="mt-1 text-xs text-muted-foreground text-wrap-anywhere">{fw.description}</div>
+                  <div className="mt-2 flex min-w-0 flex-wrap gap-1">
                     {fw.bestFor.slice(0, 4).map((tag) => (
-                      <span key={tag} className="px-1.5 py-0.5 text-[10px] bg-secondary rounded-full">
+                      <span key={tag} className="min-w-0 max-w-full rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-wrap-anywhere">
                         {tag}
                       </span>
                     ))}
@@ -209,26 +209,26 @@ export function FrameworkSubmit() {
           <div className="text-sm text-muted-foreground">加载中...</div>
         ) : customFrameworks.length > 0 ? (
           <div>
-            <h3 className="text-sm font-medium mb-3">自定义框架 ({customFrameworks.length})</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <h3 className="mb-3 text-sm font-medium text-wrap-anywhere">自定义框架 ({customFrameworks.length})</h3>
+            <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
               {customFrameworks.map((fw) => (
-                <div key={fw.id} className="border border-border rounded-lg p-3 group">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="font-medium text-sm">{fw.name}</div>
-                      <div className="text-xs text-muted-foreground mt-1">{fw.description}</div>
+                <div key={fw.id} className="group min-w-0 rounded-lg border border-border p-3">
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-wrap-anywhere">{fw.name}</div>
+                      <div className="mt-1 text-xs text-muted-foreground text-wrap-anywhere">{fw.description}</div>
                     </div>
                     <button
                       onClick={() => handleDeleteFramework(fw.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-all"
+                      className="shrink-0 p-1 text-muted-foreground opacity-0 transition-all hover:text-destructive group-hover:opacity-100"
                       title="删除"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
-                  <div className="flex flex-wrap gap-1 mt-2">
+                  <div className="mt-2 flex min-w-0 flex-wrap gap-1">
                     {fw.best_for.slice(0, 4).map((tag) => (
-                      <span key={tag} className="px-1.5 py-0.5 text-[10px] bg-secondary rounded-full">
+                      <span key={tag} className="min-w-0 max-w-full rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-wrap-anywhere">
                         {tag}
                       </span>
                     ))}
@@ -241,9 +241,9 @@ export function FrameworkSubmit() {
 
         {/* AI 生成框架 */}
         <div className="border-t border-border pt-6">
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Wand2 className="w-5 h-5" />
-            AI 生成框架
+          <h2 className="mb-4 flex min-w-0 items-center gap-2 text-lg font-semibold">
+            <Wand2 className="h-5 w-5 shrink-0" />
+            <span className="min-w-0 text-wrap-anywhere">AI 生成框架</span>
           </h2>
 
           <div className="space-y-4">
@@ -254,31 +254,31 @@ export function FrameworkSubmit() {
                 onChange={(e) => setConcept(e.target.value)}
                 placeholder="例如：我需要一个专门用于面试准备的框架，帮助我组织回答..."
                 rows={3}
-                className="w-full mt-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-wrap-anywhere"
               />
             </div>
 
             <button
               onClick={handleGenerateFramework}
               disabled={!concept.trim() || isGenerating}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex min-w-0 max-w-full items-center gap-2 rounded-lg bg-purple-500 px-4 py-2 text-white transition-colors hover:bg-purple-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isGenerating ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
               ) : (
-                <Wand2 className="w-4 h-4" />
+                <Wand2 className="h-4 w-4 shrink-0" />
               )}
-              {isGenerating ? "AI 生成中..." : "让 AI 生成框架"}
+              <span className="min-w-0 text-wrap-anywhere">{isGenerating ? "AI 生成中..." : "让 AI 生成框架"}</span>
             </button>
 
             {/* 生成结果 */}
             {generatedFramework && (
-              <div className="border border-border rounded-lg p-4 bg-muted/50">
-                <h3 className="text-sm font-medium mb-2">AI 生成的框架</h3>
-                <div className="prose prose-sm dark:prose-invert max-w-none mb-4">
+              <div className="min-w-0 rounded-lg border border-border bg-muted/50 p-4">
+                <h3 className="mb-2 text-sm font-medium text-wrap-anywhere">AI 生成的框架</h3>
+                <div className="prose prose-sm dark:prose-invert mb-4 max-w-none text-wrap-anywhere [&_*]:text-wrap-anywhere">
                   <ReactMarkdown>{generatedFramework}</ReactMarkdown>
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground text-wrap-anywhere">
                   框架信息已自动填充到下方表单，请检查后点击"保存框架"
                 </p>
               </div>
@@ -288,12 +288,12 @@ export function FrameworkSubmit() {
 
         {/* 提交框架表单 */}
         <div className="border-t border-border pt-6">
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Plus className="w-5 h-5" />
-            {generatedFramework ? "完善框架信息" : "手动提交框架"}
+          <h2 className="mb-4 flex min-w-0 items-center gap-2 text-lg font-semibold">
+            <Plus className="h-5 w-5 shrink-0" />
+            <span className="min-w-0 text-wrap-anywhere">{generatedFramework ? "完善框架信息" : "手动提交框架"}</span>
           </h2>
 
-          <div className="space-y-4 max-w-2xl">
+          <div className="min-w-0 max-w-2xl space-y-4">
             <div>
               <label className="text-sm font-medium">框架名称 *</label>
               <input
@@ -301,7 +301,7 @@ export function FrameworkSubmit() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="例如：SMART、STAR、PAR"
-                className="w-full mt-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-wrap-anywhere"
               />
             </div>
 
@@ -312,7 +312,7 @@ export function FrameworkSubmit() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="简述框架的用途和特点"
-                className="w-full mt-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-wrap-anywhere"
               />
             </div>
 
@@ -323,7 +323,7 @@ export function FrameworkSubmit() {
                 value={bestFor}
                 onChange={(e) => setBestFor(e.target.value)}
                 placeholder="例如：面试,汇报,演讲"
-                className="w-full mt-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-wrap-anywhere"
               />
             </div>
 
@@ -334,24 +334,24 @@ export function FrameworkSubmit() {
                 onChange={(e) => setTemplate(e.target.value)}
                 placeholder={`【S - 具体 Specific】\n___\n\n【M - 可衡量 Measurable】\n___\n\n【A - 可实现 Achievable】\n___\n\n【R - 相关 Relevant】\n___\n\n【T - 有时限 Time-bound】\n___`}
                 rows={10}
-                className="w-full mt-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring font-mono"
+                className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring text-wrap-anywhere"
               />
             </div>
 
             <button
               onClick={handleSubmit}
               disabled={!name || !template}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+              className={`flex min-w-0 max-w-full items-center gap-2 rounded-lg px-4 py-2 transition-colors ${
                 submitted
                   ? "bg-green-500 text-white"
                   : "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               }`}
             >
-              {submitted ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-              {submitted ? "已保存" : "保存框架"}
+              {submitted ? <Check className="h-4 w-4 shrink-0" /> : <Save className="h-4 w-4 shrink-0" />}
+              <span className="min-w-0 text-wrap-anywhere">{submitted ? "已保存" : "保存框架"}</span>
             </button>
 
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground text-wrap-anywhere">
               保存的框架会存入数据库，不会丢失。
             </p>
           </div>

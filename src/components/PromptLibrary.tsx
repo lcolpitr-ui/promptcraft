@@ -36,10 +36,10 @@ export function PromptLibrary() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-w-0 flex-col">
       {/* Header */}
       <div className="border-b border-border p-4">
-        <h1 className="text-xl font-semibold mb-4">提示词库</h1>
+        <h1 className="mb-4 text-xl font-semibold text-wrap-anywhere">提示词库</h1>
 
         {/* Search */}
         <div className="relative mb-4">
@@ -54,12 +54,12 @@ export function PromptLibrary() {
         </div>
 
         {/* Category filters */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex min-w-0 flex-wrap gap-2">
           {CATEGORIES.map((cat) => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat === "全部" ? null : cat)}
-              className={`px-3 py-1 text-sm rounded-full transition-colors ${
+              className={`min-w-0 max-w-full rounded-full px-3 py-1 text-sm transition-colors text-wrap-anywhere ${
                 (cat === "全部" && !selectedCategory) || selectedCategory === cat
                   ? "bg-primary text-primary-foreground"
                   : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
@@ -72,22 +72,22 @@ export function PromptLibrary() {
       </div>
 
       {/* Prompt list */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="min-w-0 flex-1 overflow-y-auto p-4 space-y-3">
         {filteredPrompts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+          <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
             <Tag className="w-12 h-12 mb-4 opacity-50" />
-            <p>还没有保存的提示词</p>
-            <p className="text-sm">在对话中生成提示词后，点击保存即可在这里找到</p>
+            <p className="text-wrap-anywhere">还没有保存的提示词</p>
+            <p className="text-sm text-wrap-anywhere">在对话中生成提示词后，点击保存即可在这里找到</p>
           </div>
         ) : (
           filteredPrompts.map((prompt) => (
             <div
               key={prompt.id}
-              className="border border-border rounded-lg p-4 hover:bg-accent/50 transition-colors"
+              className="min-w-0 rounded-lg border border-border p-4 transition-colors hover:bg-accent/50"
             >
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <h3 className="font-medium text-sm">{prompt.title}</h3>
-                <div className="flex gap-1">
+              <div className="mb-2 flex min-w-0 items-start justify-between gap-2">
+                <h3 className="min-w-0 flex-1 text-sm font-medium text-wrap-anywhere">{prompt.title}</h3>
+                <div className="flex shrink-0 gap-1">
                   <button
                     onClick={() => handleCopy(prompt.content)}
                     className="p-1 text-muted-foreground hover:text-foreground transition-colors"
@@ -104,24 +104,24 @@ export function PromptLibrary() {
                   </button>
                 </div>
               </div>
-              <p className="text-sm text-muted-foreground line-clamp-3 mb-2">
+              <p className="mb-2 text-sm text-muted-foreground line-clamp-3 text-wrap-anywhere">
                 {prompt.content}
               </p>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 {prompt.category && (
-                  <span className="px-2 py-0.5 bg-secondary rounded-full">
+                  <span className="min-w-0 max-w-full rounded-full bg-secondary px-2 py-0.5 text-wrap-anywhere">
                     {prompt.category}
                   </span>
                 )}
                 {prompt.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="px-2 py-0.5 bg-secondary rounded-full"
+                    className="min-w-0 max-w-full rounded-full bg-secondary px-2 py-0.5 text-wrap-anywhere"
                   >
                     {tag}
                   </span>
                 ))}
-                <span className="ml-auto">
+                <span className="ml-auto shrink-0">
                   {new Date(prompt.created_at).toLocaleDateString("zh-CN")}
                 </span>
               </div>

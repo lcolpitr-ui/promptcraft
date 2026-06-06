@@ -54,12 +54,12 @@ export function Settings() {
     : "";
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-w-0 flex-col">
       <div className="border-b border-border p-4">
-        <h1 className="text-xl font-semibold">设置</h1>
+        <h1 className="text-xl font-semibold text-wrap-anywhere">设置</h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 max-w-2xl">
+      <div className="min-w-0 w-full max-w-2xl flex-1 overflow-y-auto p-4 space-y-6">
         {/* API Key */}
         <div className="space-y-2">
           <label className="text-sm font-medium">API Key</label>
@@ -78,7 +78,7 @@ export function Settings() {
               {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground text-wrap-anywhere">
             支持 OpenAI、Claude、Deepseek 等兼容 OpenAI 格式的 API
           </p>
         </div>
@@ -96,9 +96,9 @@ export function Settings() {
             }`}
           />
           {endpointWarning && (
-            <p className="text-xs text-yellow-500">{endpointWarning}</p>
+            <p className="text-xs text-yellow-500 text-wrap-anywhere">{endpointWarning}</p>
           )}
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground text-wrap-anywhere">
             可填写基础地址，程序会自动补全 chat/completions：
             <br />
             DeepSeek: https://api.deepseek.com
@@ -117,7 +117,7 @@ export function Settings() {
             placeholder="gpt-4o-mini"
             className="w-full px-4 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground text-wrap-anywhere">
             推荐模型：gpt-4o-mini, claude-3-haiku, deepseek-chat
           </p>
         </div>
@@ -136,11 +136,11 @@ export function Settings() {
         </div>
 
         {/* Save button */}
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
           <button
             onClick={handleSave}
             disabled={saveStatus === "saving"}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+            className={`flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 transition-colors ${
               saveStatus === "success"
                 ? "bg-green-500 text-white"
                 : saveStatus === "error"
@@ -164,10 +164,10 @@ export function Settings() {
               : "保存设置"}
           </button>
           {saveStatus === "success" && (
-            <span className="text-sm text-green-500">设置保存成功！</span>
+            <span className="min-w-0 text-sm text-green-500 text-wrap-anywhere">设置保存成功！</span>
           )}
           {saveStatus === "error" && errorMessage && (
-            <span className="text-sm text-red-500">{errorMessage}</span>
+            <span className="min-w-0 text-sm text-red-500 text-wrap-anywhere">{errorMessage}</span>
           )}
         </div>
       </div>
