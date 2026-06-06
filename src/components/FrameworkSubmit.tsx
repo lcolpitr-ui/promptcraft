@@ -44,7 +44,10 @@ export function FrameworkSubmit() {
   }, []);
 
   useEffect(() => {
-    loadCustomFrameworks();
+    const timer = window.setTimeout(() => {
+      void loadCustomFrameworks();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadCustomFrameworks]);
 
   // 保存自定义框架到数据库

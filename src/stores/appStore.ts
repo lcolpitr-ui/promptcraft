@@ -102,7 +102,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedCategory: null,
   settings: {
     apiKey: "",
-    apiEndpoint: "https://api.deepseek.com/v1/chat/completions",
+    apiEndpoint: "https://api.deepseek.com",
     model: "deepseek-chat",
     language: "zh",
     frameworkMode: "auto",
@@ -441,7 +441,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         settings: {
           apiKey: raw.api_key || "",
-          apiEndpoint: raw.api_endpoint || "https://api.deepseek.com/v1/chat/completions",
+          apiEndpoint: raw.api_endpoint || "https://api.deepseek.com",
           model: raw.model || "deepseek-chat",
           language: raw.language || "zh",
           frameworkMode: (raw.framework_mode as "auto" | "manual") || "auto",

@@ -60,7 +60,7 @@ export async function sendMessage(
         messages,
         model: effectiveSettings.model || "deepseek-chat",
         api_key: effectiveSettings.apiKey,
-        api_endpoint: effectiveSettings.apiEndpoint || "https://api.deepseek.com/v1/chat/completions",
+        api_endpoint: effectiveSettings.apiEndpoint || "https://api.deepseek.com",
       },
     });
 

@@ -28,7 +28,7 @@ function App() {
         createConversation();
       }
     });
-  }, []); // 只在组件挂载时执行一次
+  }, [createConversation, loadConversations, loadSettings]); // 只在组件挂载时执行一次
 
   const navItems = [
     { id: "chat" as Page, label: "对话", icon: MessageSquare },

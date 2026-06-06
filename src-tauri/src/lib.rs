@@ -71,6 +71,31 @@ pub struct CustomFramework {
     pub created_at: String,
 }
 
+fn normalize_api_endpoint(endpoint: &str) -> Result<String, String> {
+    let endpoint = endpoint.trim().trim_end_matches('/');
+    if endpoint.is_empty() {
+        return Err("API 端点不能为空".to_string());
+    }
+
+    if !endpoint.starts_with("https://") && !endpoint.starts_with("http://localhost") {
+        return Err("API 端点必须使用 HTTPS 协议".to_string());
+    }
+
+    let lower = endpoint.to_ascii_lowercase();
+    if lower.ends_with("/chat/completions") {
+        return Ok(endpoint.to_string());
+    }
+
+    if lower.contains("api.openai.com") {
+        if lower.ends_with("/v1") {
+            return Ok(format!("{}/chat/completions", endpoint));
+        }
+        return Ok(format!("{}/v1/chat/completions", endpoint));
+    }
+
+    Ok(format!("{}/chat/completions", endpoint))
+}
+
 // 任务管理器 - 用于跟踪和取消请求
 struct TaskManager {
     cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
@@ -264,8 +289,8 @@ async fn get_settings() -> Result<Settings, String> {
     } else {
         Ok(Settings {
             api_key: String::new(),
-            api_endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
-            model: "gpt-4o-mini".to_string(),
+            api_endpoint: "https://api.deepseek.com".to_string(),
+            model: "deepseek-chat".to_string(),
             language: "zh".to_string(),
             framework_mode: "auto".to_string(),
             default_framework: None,
@@ -275,10 +300,6 @@ async fn get_settings() -> Result<Settings, String> {
 
 #[tauri::command]
 async fn save_settings(settings: Settings) -> Result<(), String> {
-    if !settings.api_endpoint.starts_with("https://") && !settings.api_endpoint.starts_with("http://localhost") {
-        return Err("API 端点必须使用 HTTPS 协议".to_string());
-    }
-
     let settings_path = dirs::config_dir()
         .ok_or("Cannot find config dir")?
         .join("promptcraft");
@@ -286,6 +307,7 @@ async fn save_settings(settings: Settings) -> Result<(), String> {
     let file_path = settings_path.join("settings.json");
 
     let mut settings_to_save = settings;
+    settings_to_save.api_endpoint = normalize_api_endpoint(&settings_to_save.api_endpoint)?;
     if !settings_to_save.api_key.is_empty() {
         settings_to_save.api_key = encrypt_api_key(&settings_to_save.api_key);
     }
@@ -300,10 +322,7 @@ async fn call_ai_api(
     request: AiRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<AiResponse, String> {
-    // 验证 Endpoint
-    if !request.api_endpoint.starts_with("https://") && !request.api_endpoint.starts_with("http://localhost") {
-        return Err("API 端点必须使用 HTTPS 协议".to_string());
-    }
+    let api_endpoint = normalize_api_endpoint(&request.api_endpoint)?;
 
     // 生成请求 ID
     let request_id = uuid::Uuid::new_v4().to_string();
@@ -344,7 +363,7 @@ async fn call_ai_api(
 
     // 发送请求
     let response = client
-        .post(&request.api_endpoint)
+        .post(&api_endpoint)
         .header("Authorization", format!("Bearer {}", request.api_key))
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")

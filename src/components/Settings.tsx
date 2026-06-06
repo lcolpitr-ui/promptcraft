@@ -10,7 +10,12 @@ export function Settings() {
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    loadSettings();
+    const timer = window.setTimeout(() => {
+      void loadSettings().then(() => {
+        setLocalSettings(useAppStore.getState().settings);
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadSettings]);
 
   // 使用 useCallback 避免不必要的重渲染
@@ -45,7 +50,7 @@ export function Settings() {
   };
 
   const endpointWarning = localSettings.apiEndpoint && !isValidEndpoint(localSettings.apiEndpoint)
-    ? "⚠️ 建议使用 HTTPS 端点以确保安全"
+    ? "建议使用 HTTPS 端点以确保安全"
     : "";
 
   return (
@@ -85,7 +90,7 @@ export function Settings() {
             type="text"
             value={localSettings.apiEndpoint}
             onChange={(e) => handleSettingsChange({ apiEndpoint: e.target.value })}
-            placeholder="https://api.openai.com/v1/chat/completions"
+            placeholder="https://api.deepseek.com"
             className={`w-full px-4 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring ${
               endpointWarning ? "border-yellow-500" : "border-input"
             }`}
@@ -94,11 +99,11 @@ export function Settings() {
             <p className="text-xs text-yellow-500">{endpointWarning}</p>
           )}
           <p className="text-xs text-muted-foreground">
-            常用端点：
+            可填写基础地址，程序会自动补全 chat/completions：
             <br />
-            OpenAI: https://api.openai.com/v1/chat/completions
+            DeepSeek: https://api.deepseek.com
             <br />
-            Deepseek: https://api.deepseek.com/v1/chat/completions
+            OpenAI: https://api.openai.com 或 https://api.openai.com/v1/chat/completions
           </p>
         </div>
 
