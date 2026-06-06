@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tagName:
+        description: "Release tag to create or update"
+        required: true
+        default: "v0.2.1"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        run: npm run lint
+
+      - name: Build and publish Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tagName || github.ref_name }}
+          releaseName: "PromptCraft ${{ github.event_name == 'workflow_dispatch' && inputs.tagName || github.ref_name }}"
+          releaseBody: |
+            PromptCraft Windows release.
+
+            This build includes automatic OpenAI-compatible API endpoint normalization:
+            - DeepSeek base URL `https://api.deepseek.com`
+            - OpenAI base URL `https://api.openai.com`
+          releaseDraft: false
+          prerelease: false
