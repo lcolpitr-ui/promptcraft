@@ -11,6 +11,33 @@ export interface PromptFramework {
 
 export const FRAMEWORKS: PromptFramework[] = [
   {
+    id: "oasis",
+    name: "OASIS",
+    fullName: "Outcome-Audience-Sources-Instructions-Stop Rules",
+    description: "基于 OpenAI 官方提示词指南的 PromptCraft 专属框架，强调结果优先、证据边界、输出契约和停止规则",
+    bestFor: ["OpenAI", "官方指南", "复杂任务", "智能体", "长上下文", "高质量提示词", "产品助手"],
+    keywords: ["openai", "gpt", "官方", "指南", "提示词优化", "提示词工程", "智能体", "agent", "复杂任务", "长上下文", "检索", "引用", "验证", "停止规则"],
+    template: `【Outcome - 目标结果】
+说明最终要交付什么，而不是规定每一步怎么做。明确“好结果”的判断标准。
+___
+
+【Audience - 受众与协作风格】
+说明面向谁、语气如何、需要多主动、何时追问、何时合理假设。
+___
+
+【Sources - 上下文与证据边界】
+列出可用资料、必须引用或验证的事实、不能凭空编造的内容，以及缺少证据时的处理方式。
+___
+
+【Instructions - 关键约束与输出契约】
+说明必要约束、输出字段、长度、格式、保留内容、工具使用或验证要求。
+___
+
+【Stop Rules - 停止与追问规则】
+说明什么时候可以直接回答、什么时候继续检索/验证、什么时候只问最小必要问题。
+___`
+  },
+  {
     id: "costar",
     name: "CO-STAR",
     fullName: "Context-Objective-Style-Tone-Audience-Response",

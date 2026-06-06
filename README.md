@@ -14,11 +14,11 @@ PromptCraft 是一款基于 Tauri 的本地桌面 AI 提示词打磨工具。它
 
 ## 下载
 
-最新版本：v0.2.4
+最新版本：v0.2.5
 
-- Windows 安装程序：[PromptCraft_0.2.4_x64-setup.exe](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.4/PromptCraft_0.2.4_x64-setup.exe)
-- Windows MSI 安装包：[PromptCraft_0.2.4_x64_en-US.msi](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.4/PromptCraft_0.2.4_x64_en-US.msi)
-- Release 页面：[PromptCraft v0.2.4](https://github.com/lcolpitr-ui/promptcraft/releases/tag/v0.2.4)
+- Windows 安装程序：[PromptCraft_0.2.5_x64-setup.exe](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.5/PromptCraft_0.2.5_x64-setup.exe)
+- Windows MSI 安装包：[PromptCraft_0.2.5_x64_en-US.msi](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.5/PromptCraft_0.2.5_x64_en-US.msi)
+- Release 页面：[PromptCraft v0.2.5](https://github.com/lcolpitr-ui/promptcraft/releases/tag/v0.2.5)
 
 如果 Windows 弹出安全提示，请确认文件来自本仓库的 Release 页面后再运行。
 
@@ -53,6 +53,16 @@ API 端点: https://api.openai.com
 ## 上下文控制
 
 PromptCraft 会默认使用精简系统提示词，只把当前任务匹配到的框架核心字段传给模型，避免把完整框架库反复塞进上下文。多轮对话也会保留最近上下文并裁剪超长消息，降低注意力稀释、请求延迟和 KV cache 压力。
+
+## 专属框架：OASIS
+
+OASIS 是 PromptCraft 基于 OpenAI 官方 Prompt guidance 提炼的专属框架，适合复杂任务、智能体工作流、长上下文提示词和需要证据边界的产品助手。
+
+- `Outcome`：先定义最终结果、成功标准和约束，而不是规定冗长步骤。
+- `Audience`：明确受众、语气、协作风格、追问和合理假设规则。
+- `Sources`：区分已给资料、必须引用/验证的事实、禁止编造的内容。
+- `Instructions`：写清输出字段、长度、格式、工具使用和验证要求。
+- `Stop Rules`：说明什么时候回答、继续检索、验证、追问或停止。
 
 ## 本地数据
 

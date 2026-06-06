@@ -80,7 +80,7 @@ function App() {
         )}
 
         <div className="hidden border-t border-border p-4 sm:block">
-          <p className="text-xs text-muted-foreground text-center">v0.2.4</p>
+          <p className="text-xs text-muted-foreground text-center">v0.2.5</p>
         </div>
       </nav>
 
