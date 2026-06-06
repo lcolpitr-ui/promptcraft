@@ -104,7 +104,7 @@ export function ChatView() {
                       : "bg-card border border-border"
                   }`}
                 >
-                  <div className="prose prose-sm dark:prose-invert max-w-none text-wrap-anywhere [&_*]:text-wrap-anywhere">
+                  <div className="markdown-content prose prose-sm dark:prose-invert max-w-none text-wrap-anywhere [&_*]:text-wrap-anywhere">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
                   {msg.role === "assistant" && (

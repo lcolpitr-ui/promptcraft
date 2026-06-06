@@ -85,4 +85,38 @@
     overflow-wrap: anywhere;
     word-break: break-word;
   }
+
+  .markdown-content {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .markdown-content > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .markdown-content :where(h1, h2, h3, h4, h5, h6, p, li, blockquote, strong, em, a) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .markdown-content :where(pre, code) {
+    max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .markdown-content pre {
+    overflow-x: auto;
+  }
+
+  .markdown-content table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }

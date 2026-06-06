@@ -275,7 +275,7 @@ export function FrameworkSubmit() {
             {generatedFramework && (
               <div className="min-w-0 rounded-lg border border-border bg-muted/50 p-4">
                 <h3 className="mb-2 text-sm font-medium text-wrap-anywhere">AI 生成的框架</h3>
-                <div className="prose prose-sm dark:prose-invert mb-4 max-w-none text-wrap-anywhere [&_*]:text-wrap-anywhere">
+                <div className="markdown-content prose prose-sm dark:prose-invert mb-4 max-w-none text-wrap-anywhere [&_*]:text-wrap-anywhere">
                   <ReactMarkdown>{generatedFramework}</ReactMarkdown>
                 </div>
                 <p className="text-xs text-muted-foreground text-wrap-anywhere">
