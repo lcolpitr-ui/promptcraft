@@ -14,10 +14,11 @@ PromptCraft 是一款基于 Tauri 的本地桌面 AI 提示词打磨工具。它
 
 ## 下载
 
-最新版本：v0.2.1
+源码最新版本：v0.2.1
 
-- Release 页面：[PromptCraft v0.2.1](https://github.com/lcolpitr-ui/promptcraft/releases/tag/v0.2.1)
+- Release 页面：[PromptCraft Releases](https://github.com/lcolpitr-ui/promptcraft/releases)
 - Windows 用户请在 Release 页面下载最新的安装包或便携版资产。
+- v0.2.1 修复已合入源码；Windows 安装包需要重新构建后发布。
 
 如果 Windows 弹出安全提示，请确认文件来自本仓库的 Release 页面后再运行。
 
