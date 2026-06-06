@@ -19,6 +19,47 @@ export interface AiResponse {
   request_id: string;
 }
 
+const MAX_HISTORY_MESSAGES = 10;
+const MAX_HISTORY_CHARS = 6000;
+const MAX_MESSAGE_CHARS = 2500;
+
+function trimContent(content: string, maxChars: number): string {
+  if (content.length <= maxChars) {
+    return content;
+  }
+
+  return `${content.slice(0, maxChars)}\n\n[内容过长，已截断以控制上下文长度]`;
+}
+
+function getCompactHistory(history: ChatMessage[]): ChatMessage[] {
+  const recentMessages = history.slice(-MAX_HISTORY_MESSAGES).map((message) => ({
+    ...message,
+    content: trimContent(message.content, MAX_MESSAGE_CHARS),
+  }));
+
+  let usedChars = 0;
+  const compactHistory: ChatMessage[] = [];
+
+  for (let i = recentMessages.length - 1; i >= 0; i -= 1) {
+    const message = recentMessages[i];
+    const messageChars = message.content.length;
+    if (usedChars + messageChars > MAX_HISTORY_CHARS) {
+      break;
+    }
+    usedChars += messageChars;
+    compactHistory.unshift(message);
+  }
+
+  if (compactHistory.length < history.length) {
+    compactHistory.unshift({
+      role: "system",
+      content: "较早的对话已省略。请基于当前用户输入和最近上下文继续完成提示词打磨。",
+    });
+  }
+
+  return compactHistory;
+}
+
 // 从本地存储获取设置
 function getStoredSettings() {
   try {
@@ -50,7 +91,7 @@ export async function sendMessage(
 
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
-    ...history,
+    ...getCompactHistory(history),
     { role: "user", content: userMessage },
   ];
 

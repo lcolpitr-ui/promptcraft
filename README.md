@@ -14,11 +14,11 @@ PromptCraft 是一款基于 Tauri 的本地桌面 AI 提示词打磨工具。它
 
 ## 下载
 
-最新版本：v0.2.2
+最新版本：v0.2.3
 
-- Windows 安装程序：[PromptCraft_0.2.2_x64-setup.exe](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.2/PromptCraft_0.2.2_x64-setup.exe)
-- Windows MSI 安装包：[PromptCraft_0.2.2_x64_en-US.msi](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.2/PromptCraft_0.2.2_x64_en-US.msi)
-- Release 页面：[PromptCraft v0.2.2](https://github.com/lcolpitr-ui/promptcraft/releases/tag/v0.2.2)
+- Windows 安装程序：[PromptCraft_0.2.3_x64-setup.exe](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.3/PromptCraft_0.2.3_x64-setup.exe)
+- Windows MSI 安装包：[PromptCraft_0.2.3_x64_en-US.msi](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.3/PromptCraft_0.2.3_x64_en-US.msi)
+- Release 页面：[PromptCraft v0.2.3](https://github.com/lcolpitr-ui/promptcraft/releases/tag/v0.2.3)
 
 如果 Windows 弹出安全提示，请确认文件来自本仓库的 Release 页面后再运行。
 
@@ -49,6 +49,10 @@ API 端点: https://api.openai.com
 - `https://api.deepseek.com` 会自动请求 `https://api.deepseek.com/chat/completions`
 - `https://api.openai.com` 会自动请求 `https://api.openai.com/v1/chat/completions`
 - 已经填写完整 `/chat/completions` 地址时，程序会直接使用该地址
+
+## 上下文控制
+
+PromptCraft 会默认使用精简系统提示词，只把当前任务匹配到的框架核心字段传给模型，避免把完整框架库反复塞进上下文。多轮对话也会保留最近上下文并裁剪超长消息，降低注意力稀释、请求延迟和 KV cache 压力。
 
 ## 本地数据
 
