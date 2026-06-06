@@ -53,8 +53,13 @@ jobs:
           releaseBody: |
             PromptCraft Windows release.
 
-            This build includes automatic OpenAI-compatible API endpoint normalization:
-            - DeepSeek base URL `https://api.deepseek.com`
-            - OpenAI base URL `https://api.openai.com`
+            Highlights:
+            - OpenAI-compatible API endpoint normalization for DeepSeek and OpenAI base URLs.
+            - Responsive UI safeguards for long model names, API URLs, chat text, and framework labels.
+            - Compact prompt context that sends only the selected framework guide plus recent chat history.
+
+            Recommended download:
+            - `PromptCraft_*_x64-setup.exe` for the standard Windows installer.
+            - `PromptCraft_*_x64_en-US.msi` for MSI-based installation.
           releaseDraft: false
           prerelease: false
