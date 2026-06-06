@@ -1,4 +1,4 @@
-import { matchFramework, type PromptFramework } from "./frameworks";
+import { matchFrameworkRecommendation, type PromptFramework } from "./frameworks";
 
 const BASE_SYSTEM_PROMPT = `你是 PromptCraft 的提示词工程助手。你的任务是把用户的模糊想法打磨成可直接交给大模型使用的高质量提示词。
 
@@ -25,15 +25,16 @@ function getTemplateFields(template: string): string[] {
     .slice(0, 8);
 }
 
-function getCompactFrameworkGuide(framework: PromptFramework): string {
+function getCompactFrameworkGuide(framework: PromptFramework, selectionReason?: string): string {
   const fields = getTemplateFields(framework.template);
   const fieldList = fields.map((field) => `- ${field}`).join("\n");
   const bestFor = framework.bestFor.slice(0, 5).join("、");
+  const reasonLine = selectionReason ? `框架选择说明：${selectionReason}\n` : "";
 
   return `当前框架：${framework.name} (${framework.fullName})
 适用场景：${bestFor}
 使用原因：${framework.description}
-生成提示词时只保留以下必要字段：
+${reasonLine}生成提示词时只保留以下必要字段：
 ${fieldList}
 
 如果用户缺少某个必要字段，请用“待补充”标记，或先追问。`;
@@ -42,9 +43,14 @@ ${fieldList}
 export function getSystemPrompt(
   userInput?: string,
   explicitFramework?: PromptFramework | null,
-  availableFrameworks?: PromptFramework[]
+  availableFrameworks?: PromptFramework[],
+  selectionReason?: string
 ): string {
-  const framework = explicitFramework || (userInput ? matchFramework(userInput, availableFrameworks) : null);
+  const recommendation = !explicitFramework && userInput
+    ? matchFrameworkRecommendation(userInput, availableFrameworks)
+    : null;
+  const framework = explicitFramework || recommendation?.framework || null;
+  const reason = selectionReason || (recommendation && !recommendation.isFallback ? recommendation.reason : undefined);
 
   if (!framework) {
     return BASE_SYSTEM_PROMPT;
@@ -52,7 +58,7 @@ export function getSystemPrompt(
 
   return `${BASE_SYSTEM_PROMPT}
 
-${getCompactFrameworkGuide(framework)}`;
+${getCompactFrameworkGuide(framework, reason)}`;
 }
 
 export const SYSTEM_PROMPT = getSystemPrompt();

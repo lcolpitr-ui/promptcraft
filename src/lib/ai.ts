@@ -80,7 +80,8 @@ export async function sendMessage(
   settings?: { apiKey: string; apiEndpoint: string; model: string } | null,
   framework?: PromptFramework | null,
   requestId?: string,
-  availableFrameworks: PromptFramework[] = FRAMEWORKS
+  availableFrameworks: PromptFramework[] = FRAMEWORKS,
+  frameworkSelectionReason?: string
 ): Promise<AiResponse | null> {
   // 如果没有传入设置，尝试从存储中获取
   const effectiveSettings = settings || getStoredSettings();
@@ -90,7 +91,7 @@ export async function sendMessage(
   }
 
   // 根据用户输入和选定框架生成系统提示词
-  const systemPrompt = getSystemPrompt(userMessage, framework, availableFrameworks);
+  const systemPrompt = getSystemPrompt(userMessage, framework, availableFrameworks, frameworkSelectionReason);
 
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },

@@ -9,6 +9,57 @@ export interface PromptFramework {
   template: string;
 }
 
+export interface FrameworkMatchResult {
+  framework: PromptFramework;
+  confidence: "high" | "medium" | "low";
+  score: number;
+  isFallback: boolean;
+  reason: string;
+}
+
+type IntentRule = {
+  label: string;
+  terms: string[];
+  preferredFrameworks: string[];
+};
+
+const INTENT_RULES: IntentRule[] = [
+  {
+    label: "技术/API/代码",
+    terms: ["技术", "代码", "编程", "开发", "数据库", "表结构", "SQL", "API", "接口", "架构", "debug", "bug", "test", "code", "database", "schema", "backend", "frontend"],
+    preferredFrameworks: ["rodes"],
+  },
+  {
+    label: "写作/营销",
+    terms: ["写", "文案", "文章", "公众号", "营销", "推广", "品牌", "广告", "小红书", "社媒", "copywriting", "marketing", "blog", "post", "content"],
+    preferredFrameworks: ["costar"],
+  },
+  {
+    label: "分析/业务决策",
+    terms: ["分析", "业务", "问题", "决策", "建议", "诊断", "策略", "指标", "KPI", "增长", "analysis", "business", "decision", "strategy", "recommendation"],
+    preferredFrameworks: ["care", "broke"],
+  },
+  {
+    label: "计划/项目",
+    terms: ["计划", "规划", "项目", "路线图", "排期", "执行", "目标", "里程碑", "plan", "project", "roadmap", "schedule"],
+    preferredFrameworks: ["broke", "rise"],
+  },
+  {
+    label: "设计/创意",
+    terms: ["设计", "创意", "头脑风暴", "方案", "原型", "体验", "视觉", "design", "creative", "brainstorm", "prototype", "ux", "ui"],
+    preferredFrameworks: ["crispe"],
+  },
+  {
+    label: "翻译/总结",
+    terms: ["翻译", "总结", "摘要", "提炼", "改写", "解释", "translate", "summary", "summarize", "rewrite", "explain"],
+    preferredFrameworks: ["ape", "era"],
+  },
+];
+
+const FALLBACK_FRAMEWORK_ID = "oasis";
+const MEDIUM_CONFIDENCE_SCORE = 4;
+const HIGH_CONFIDENCE_SCORE = 8;
+
 export const FRAMEWORKS: PromptFramework[] = [
   {
     id: "oasis",
@@ -221,44 +272,156 @@ ___`
   }
 ];
 
+function normalizeText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function normalizeFrameworkId(id: string): string {
+  return id.startsWith("custom:") ? id : id.toLowerCase();
+}
+
+function getFieldMatches(input: string, values: string[], weight: number, label: string) {
+  let score = 0;
+  const matches: string[] = [];
+
+  values
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .forEach((value) => {
+      const normalized = normalizeText(value);
+      if (!normalized) return;
+
+      if (input.includes(normalized)) {
+        score += weight;
+        matches.push(value);
+        return;
+      }
+
+      const words = normalized.split(/[\s,，。;；:：/|()（）\-_]+/).filter((word) => word.length >= 2);
+      const hitCount = words.filter((word) => input.includes(word)).length;
+      if (hitCount > 0) {
+        score += Math.min(weight - 1, hitCount);
+        matches.push(`${label}:${value}`);
+      }
+    });
+
+  return { score, matches };
+}
+
+function scoreIntent(input: string, framework: PromptFramework) {
+  let score = 0;
+  const matches: string[] = [];
+  const frameworkId = normalizeFrameworkId(framework.id);
+
+  for (const rule of INTENT_RULES) {
+    const hitTerms = rule.terms.filter((term) => input.includes(normalizeText(term)));
+    if (hitTerms.length === 0) continue;
+
+    const isPreferred = rule.preferredFrameworks.includes(frameworkId);
+    const frameworkText = normalizeText([
+      framework.name,
+      framework.fullName,
+      framework.description,
+      ...framework.bestFor,
+      ...framework.keywords,
+      framework.template,
+    ].join(" "));
+    const isSemanticallyRelated = hitTerms.some((term) => frameworkText.includes(normalizeText(term)));
+
+    if (isPreferred) {
+      score += 5 + Math.min(hitTerms.length, 3);
+      matches.push(rule.label);
+    } else if (isSemanticallyRelated) {
+      score += 2;
+      matches.push(rule.label);
+    }
+  }
+
+  return { score, matches };
+}
+
+function confidenceFromScore(score: number): FrameworkMatchResult["confidence"] {
+  if (score >= HIGH_CONFIDENCE_SCORE) return "high";
+  if (score >= MEDIUM_CONFIDENCE_SCORE) return "medium";
+  return "low";
+}
+
+function getFallbackFramework(frameworks: PromptFramework[]): PromptFramework {
+  return frameworks.find((fw) => fw.id === FALLBACK_FRAMEWORK_ID)
+    || frameworks.find((fw) => fw.id === "costar")
+    || frameworks[0];
+}
+
+export function matchFrameworkRecommendation(
+  userInput: string,
+  frameworks: PromptFramework[] = FRAMEWORKS
+): FrameworkMatchResult {
+  const usableFrameworks = frameworks.length > 0 ? frameworks : FRAMEWORKS;
+  const input = normalizeText(userInput);
+  const fallback = getFallbackFramework(usableFrameworks);
+
+  if (!input) {
+    return {
+      framework: fallback,
+      confidence: "low",
+      score: 0,
+      isFallback: true,
+      reason: "输入信息不足，使用默认框架",
+    };
+  }
+
+  const ranked = usableFrameworks.map((framework) => {
+    const nameMatch = getFieldMatches(input, [framework.name, framework.fullName], 4, "名称");
+    const descriptionMatch = getFieldMatches(input, [framework.description], 2, "描述");
+    const bestForMatch = getFieldMatches(input, framework.bestFor, 4, "适用场景");
+    const keywordMatch = getFieldMatches(input, framework.keywords, 2, "关键词");
+    const templateMatch = getFieldMatches(input, [framework.template], 1, "模板");
+    const intentMatch = scoreIntent(input, framework);
+    const score = nameMatch.score
+      + descriptionMatch.score
+      + bestForMatch.score
+      + keywordMatch.score
+      + templateMatch.score
+      + intentMatch.score;
+    const reasons = [
+      ...intentMatch.matches.map((match) => `意图：${match}`),
+      ...bestForMatch.matches.slice(0, 2).map((match) => `适用：${match}`),
+      ...keywordMatch.matches.slice(0, 2).map((match) => `关键词：${match}`),
+      ...nameMatch.matches.slice(0, 1).map((match) => `名称：${match}`),
+      ...descriptionMatch.matches.slice(0, 1).map(() => "描述匹配"),
+    ];
+
+    return { framework, score, reasons };
+  }).sort((a, b) => b.score - a.score);
+
+  const best = ranked[0];
+  const confidence = confidenceFromScore(best.score);
+
+  if (!best || confidence === "low") {
+    return {
+      framework: fallback,
+      confidence: "low",
+      score: best?.score ?? 0,
+      isFallback: true,
+      reason: best?.score ? `置信度较低，默认使用 ${fallback.name}` : "没有明显匹配，使用默认框架",
+    };
+  }
+
+  return {
+    framework: best.framework,
+    confidence,
+    score: best.score,
+    isFallback: false,
+    reason: best.reasons.length > 0 ? best.reasons.slice(0, 3).join("；") : "综合字段匹配",
+  };
+}
+
 // 智能匹配最佳框架
 export function matchFramework(
   userInput: string,
   frameworks: PromptFramework[] = FRAMEWORKS
 ): PromptFramework {
-  const input = userInput.toLowerCase();
-
-  // 计算每个框架的匹配分数
-  const scores = frameworks.map(fw => {
-    let score = 0;
-    const searchableFields = [fw.name, fw.fullName, fw.description];
-    searchableFields.forEach(field => {
-      if (field.toLowerCase().includes(input) || input.includes(field.toLowerCase())) {
-        score += 2;
-      }
-    });
-    fw.keywords.forEach(keyword => {
-      if (input.includes(keyword.toLowerCase())) {
-        score += 2;
-      }
-    });
-    fw.bestFor.forEach(area => {
-      if (input.includes(area.toLowerCase())) {
-        score += 1;
-      }
-    });
-    return { framework: fw, score };
-  });
-
-  // 按分数排序
-  scores.sort((a, b) => b.score - a.score);
-
-  // 如果没有明显匹配，返回 CO-STAR 作为默认
-  if (scores[0].score === 0) {
-    return frameworks.find(fw => fw.id === "costar") || frameworks[0];
-  }
-
-  return scores[0].framework;
+  return matchFrameworkRecommendation(userInput, frameworks).framework;
 }
 
 // 获取所有框架列表（用于展示）

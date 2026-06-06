@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { sendMessage, type ChatMessage } from "../lib/ai";
-import { FRAMEWORKS, type PromptFramework } from "../lib/frameworks";
+import { FRAMEWORKS, matchFrameworkRecommendation, type FrameworkMatchResult, type PromptFramework } from "../lib/frameworks";
 import { safeInvoke } from "../lib/tauri";
 
 export interface Prompt {
@@ -48,6 +48,7 @@ interface AppState {
   // 框架选择
   frameworkMode: "auto" | "manual";
   selectedFramework: PromptFramework | null;
+  lastFrameworkMatch: FrameworkMatchResult | null;
   customFrameworks: CustomFramework[];
   availableFrameworks: PromptFramework[];
 
@@ -129,6 +130,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentConversation: null,
   frameworkMode: "auto",
   selectedFramework: null,
+  lastFrameworkMatch: null,
   customFrameworks: [],
   availableFrameworks: FRAMEWORKS,
   messages: [],
@@ -341,8 +343,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       // 确定使用的框架
       let framework: PromptFramework | null = null;
+      let frameworkSelectionReason: string | undefined;
       if (frameworkMode === "manual" && selectedFramework) {
         framework = selectedFramework;
+        set({ lastFrameworkMatch: null });
+      } else {
+        const recommendation = matchFrameworkRecommendation(content, availableFrameworks);
+        framework = recommendation.framework;
+        frameworkSelectionReason = recommendation.isFallback
+          ? `低置信兜底：${recommendation.reason}`
+          : recommendation.reason;
+        set({ lastFrameworkMatch: recommendation });
       }
 
       // 检查是否已取消
@@ -351,7 +362,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      const result = await sendMessage(content, messages, settings, framework, requestId, availableFrameworks);
+      const result = await sendMessage(
+        content,
+        messages,
+        settings,
+        framework,
+        requestId,
+        availableFrameworks,
+        frameworkSelectionReason
+      );
 
       // 检查是否被取消（后端返回 REQUEST_CANCELLED）
       if (result === null || isCancelled || currentRequestId !== requestId) {

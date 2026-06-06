@@ -1,14 +1,36 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useAppStore } from "../stores/appStore";
 import { Send, Trash2, Copy, Save, Sparkles, Square } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { FrameworkSelector } from "./FrameworkSelector";
+import { matchFrameworkRecommendation } from "../lib/frameworks";
 
 export function ChatView() {
-  const { messages, isLoading, sendMessage, stopGeneration, clearCurrentChat, savePrompt, selectedFramework } = useAppStore();
+  const {
+    messages,
+    isLoading,
+    sendMessage,
+    stopGeneration,
+    clearCurrentChat,
+    savePrompt,
+    frameworkMode,
+    selectedFramework,
+    availableFrameworks,
+    lastFrameworkMatch,
+  } = useAppStore();
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const autoFrameworkPreview = useMemo(() => {
+    if (frameworkMode !== "auto") return null;
+    const trimmed = input.trim();
+    return trimmed ? matchFrameworkRecommendation(trimmed, availableFrameworks) : lastFrameworkMatch;
+  }, [availableFrameworks, frameworkMode, input, lastFrameworkMatch]);
+  const frameworkStatus = frameworkMode === "manual"
+    ? (selectedFramework ? `使用 ${selectedFramework.name} 框架` : "手动选择框架")
+    : autoFrameworkPreview
+      ? `${autoFrameworkPreview.isFallback ? "默认框架" : "自动匹配"}：${autoFrameworkPreview.framework.name}`
+      : "自动匹配框架";
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -60,7 +82,7 @@ export function ChatView() {
       <div className="relative z-10 flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-background px-4 py-3">
         <FrameworkSelector />
         <div className="min-w-0 text-xs text-muted-foreground text-wrap-anywhere">
-          {selectedFramework ? `使用 ${selectedFramework.name} 框架` : "自动匹配框架"}
+          {frameworkStatus}
         </div>
       </div>
 
@@ -76,7 +98,7 @@ export function ChatView() {
               描述你的想法，AI 会帮你追问细节，最终生成高质量的结构化提示词
             </p>
             <p className="mb-8 text-center text-xs text-muted-foreground text-wrap-anywhere">
-              当前模式：{selectedFramework ? `手动 - ${selectedFramework.name}` : "自动匹配"}
+              当前模式：{frameworkStatus}
             </p>
             <div className="grid w-full max-w-lg grid-cols-1 gap-3 sm:grid-cols-2">
               {suggestions.map((s) => (
