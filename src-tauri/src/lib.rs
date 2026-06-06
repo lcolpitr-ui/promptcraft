@@ -26,6 +26,14 @@ pub struct Prompt {
     pub source_session_title: Option<String>,
     #[serde(default)]
     pub source_framework: Option<String>,
+    #[serde(default)]
+    pub user_input: Option<String>,
+    #[serde(default)]
+    pub use_case: Option<String>,
+    #[serde(default)]
+    pub rating: Option<u8>,
+    #[serde(default)]
+    pub use_count: u32,
     pub created_at: String,
     #[serde(default)]
     pub updated_at: Option<String>,
@@ -314,8 +322,9 @@ async fn save_prompt(state: tauri::State<'_, AppState>, prompt: Prompt) -> Resul
     db.execute(
         "INSERT OR REPLACE INTO prompts (
             id, title, content, category, tags, is_favorite, is_pinned,
-            source_session_id, source_session_title, source_framework, created_at, updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            source_session_id, source_session_title, source_framework, user_input,
+            use_case, rating, use_count, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         rusqlite::params![
             prompt.id,
             prompt.title,
@@ -327,6 +336,10 @@ async fn save_prompt(state: tauri::State<'_, AppState>, prompt: Prompt) -> Resul
             prompt.source_session_id,
             prompt.source_session_title,
             prompt.source_framework,
+            prompt.user_input,
+            prompt.use_case,
+            prompt.rating,
+            prompt.use_count,
             prompt.created_at,
             prompt.updated_at
         ],
@@ -340,7 +353,8 @@ async fn get_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<Prompt>, S
     let mut stmt = db
         .prepare(
             "SELECT id, title, content, category, tags, is_favorite, is_pinned,
-                source_session_id, source_session_title, source_framework, created_at, updated_at
+                source_session_id, source_session_title, source_framework, user_input,
+                use_case, rating, use_count, created_at, updated_at
             FROM prompts
             ORDER BY is_pinned DESC, created_at DESC"
         )
@@ -358,8 +372,12 @@ async fn get_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<Prompt>, S
                 row.get::<_, Option<String>>(7)?,
                 row.get::<_, Option<String>>(8)?,
                 row.get::<_, Option<String>>(9)?,
-                row.get::<_, String>(10)?,
+                row.get::<_, Option<String>>(10)?,
                 row.get::<_, Option<String>>(11)?,
+                row.get::<_, Option<u8>>(12)?,
+                row.get::<_, u32>(13)?,
+                row.get::<_, String>(14)?,
+                row.get::<_, Option<String>>(15)?,
             ))
         })
         .map_err(|e| e.to_string())?;
@@ -376,6 +394,10 @@ async fn get_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<Prompt>, S
             source_session_id,
             source_session_title,
             source_framework,
+            user_input,
+            use_case,
+            rating,
+            use_count,
             created_at,
             updated_at,
         ) = row.map_err(|e| e.to_string())?;
@@ -390,6 +412,10 @@ async fn get_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<Prompt>, S
             source_session_id,
             source_session_title,
             source_framework,
+            user_input,
+            use_case,
+            rating,
+            use_count,
             created_at,
             updated_at,
         });
@@ -842,6 +868,10 @@ pub fn run() {
                     source_session_id TEXT,
                     source_session_title TEXT,
                     source_framework TEXT,
+                    user_input TEXT,
+                    use_case TEXT,
+                    rating INTEGER,
+                    use_count INTEGER NOT NULL DEFAULT 0,
                     updated_at DATETIME,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
@@ -871,6 +901,10 @@ pub fn run() {
             let _ = db.execute("ALTER TABLE prompts ADD COLUMN source_session_id TEXT", rusqlite::params![]);
             let _ = db.execute("ALTER TABLE prompts ADD COLUMN source_session_title TEXT", rusqlite::params![]);
             let _ = db.execute("ALTER TABLE prompts ADD COLUMN source_framework TEXT", rusqlite::params![]);
+            let _ = db.execute("ALTER TABLE prompts ADD COLUMN user_input TEXT", rusqlite::params![]);
+            let _ = db.execute("ALTER TABLE prompts ADD COLUMN use_case TEXT", rusqlite::params![]);
+            let _ = db.execute("ALTER TABLE prompts ADD COLUMN rating INTEGER", rusqlite::params![]);
+            let _ = db.execute("ALTER TABLE prompts ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0", rusqlite::params![]);
             let _ = db.execute("ALTER TABLE prompts ADD COLUMN updated_at DATETIME", rusqlite::params![]);
 
             app.manage(AppState {

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useAppStore, type Prompt } from "../stores/appStore";
 import { Send, Trash2, Copy, Save, Sparkles, Square } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { FrameworkSelector } from "./FrameworkSelector";
@@ -21,6 +21,7 @@ export function ChatView() {
     currentConversation,
   } = useAppStore();
   const [input, setInput] = useState("");
+  const [saveDraft, setSaveDraft] = useState<Prompt | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const autoFrameworkPreview = useMemo(() => {
@@ -56,26 +57,47 @@ export function ChatView() {
     navigator.clipboard.writeText(content);
   };
 
-  const handleSaveAsPrompt = (content: string) => {
+  const handleOpenSavePrompt = (content: string, messageIndex: number) => {
     const title = content.slice(0, 50).replace(/\n/g, " ");
+    const sourceFramework = selectedFramework?.name || lastFrameworkMatch?.framework.name || null;
+    const previousUserMessage = [...messages]
+      .slice(0, messageIndex)
+      .reverse()
+      .find((message) => message.role === "user");
     const prompt = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       title: title || "未命名提示词",
       content,
       category: "对话生成",
       tags: [
-        selectedFramework?.name || lastFrameworkMatch?.framework.name || "自动",
+        sourceFramework || "自动",
         "聊天保存",
       ],
       is_favorite: false,
       is_pinned: false,
       source_session_id: currentConversation?.id || null,
       source_session_title: currentConversation?.title || null,
-      source_framework: selectedFramework?.name || lastFrameworkMatch?.framework.name || null,
+      source_framework: sourceFramework,
+      user_input: previousUserMessage?.content || null,
+      use_case: "提示词打磨",
+      rating: null,
+      use_count: 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    savePrompt(prompt);
+    setSaveDraft(prompt);
+  };
+
+  const handleConfirmSavePrompt = async () => {
+    if (!saveDraft) return;
+    await savePrompt({
+      ...saveDraft,
+      title: saveDraft.title.trim() || "未命名提示词",
+      category: saveDraft.category.trim() || "未分类",
+      tags: saveDraft.tags.filter(Boolean),
+      updated_at: new Date().toISOString(),
+    });
+    setSaveDraft(null);
   };
 
   const suggestions = [
@@ -151,7 +173,7 @@ export function ChatView() {
                         复制
                       </button>
                       <button
-                        onClick={() => handleSaveAsPrompt(msg.content)}
+                        onClick={() => handleOpenSavePrompt(msg.content, i)}
                         className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                       >
                         <Save className="w-3 h-3" />
@@ -180,6 +202,142 @@ export function ChatView() {
           </div>
         )}
       </div>
+
+      {saveDraft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-border bg-background p-4 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">保存到提示词库</h2>
+              <button
+                onClick={() => setSaveDraft(null)}
+                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="关闭"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">标题</span>
+                  <input
+                    value={saveDraft.title}
+                    onChange={(event) => setSaveDraft({ ...saveDraft, title: event.target.value })}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">用途类型</span>
+                  <input
+                    value={saveDraft.use_case || ""}
+                    onChange={(event) => setSaveDraft({ ...saveDraft, use_case: event.target.value || null })}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">提示词内容</span>
+                <textarea
+                  value={saveDraft.content}
+                  onChange={(event) => setSaveDraft({ ...saveDraft, content: event.target.value })}
+                  rows={8}
+                  className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+              </label>
+
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">用户原始输入</span>
+                <textarea
+                  value={saveDraft.user_input || ""}
+                  onChange={(event) => setSaveDraft({ ...saveDraft, user_input: event.target.value || null })}
+                  rows={3}
+                  className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+              </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">分类</span>
+                  <input
+                    value={saveDraft.category}
+                    onChange={(event) => setSaveDraft({ ...saveDraft, category: event.target.value })}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">标签</span>
+                  <input
+                    value={saveDraft.tags.join(", ")}
+                    onChange={(event) => setSaveDraft({
+                      ...saveDraft,
+                      tags: event.target.value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean),
+                    })}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">框架</span>
+                  <input
+                    value={saveDraft.source_framework || ""}
+                    onChange={(event) => setSaveDraft({ ...saveDraft, source_framework: event.target.value || null })}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="font-medium">评分</span>
+                  <select
+                    value={saveDraft.rating ?? ""}
+                    onChange={(event) => setSaveDraft({
+                      ...saveDraft,
+                      rating: event.target.value ? Number(event.target.value) : null,
+                    })}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="">未评分</option>
+                    {[1, 2, 3, 4, 5].map((rating) => (
+                      <option key={rating} value={rating}>{rating} 星</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="flex min-w-0 flex-wrap items-center gap-4 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={saveDraft.is_favorite}
+                    onChange={(event) => setSaveDraft({ ...saveDraft, is_favorite: event.target.checked })}
+                  />
+                  收藏
+                </label>
+                <span className="text-xs text-muted-foreground text-wrap-anywhere">
+                  来源会话：{saveDraft.source_session_title || "当前会话"} · 使用次数：{saveDraft.use_count}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setSaveDraft(null)}
+                className="rounded-lg bg-secondary px-4 py-2 text-sm text-secondary-foreground hover:bg-secondary/80"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmSavePrompt}
+                className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Input area */}
       <div className="border-t border-border p-4">

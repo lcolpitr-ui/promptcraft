@@ -14,6 +14,10 @@ export interface Prompt {
   source_session_id: string | null;
   source_session_title: string | null;
   source_framework: string | null;
+  user_input: string | null;
+  use_case: string | null;
+  rating: number | null;
+  use_count: number;
   created_at: string;
   updated_at: string | null;
 }

@@ -4,7 +4,7 @@ import { Check, Copy, Edit2, Pin, Search, Star, Tag, Trash2, X } from "lucide-re
 
 const ALL = "全部";
 
-type PromptDraft = Pick<Prompt, "title" | "content" | "category" | "tags">;
+type PromptDraft = Pick<Prompt, "title" | "content" | "category" | "tags" | "source_framework" | "user_input" | "use_case" | "rating">;
 
 function getDraft(prompt: Prompt): PromptDraft {
   return {
@@ -12,6 +12,10 @@ function getDraft(prompt: Prompt): PromptDraft {
     content: prompt.content,
     category: prompt.category,
     tags: prompt.tags,
+    source_framework: prompt.source_framework,
+    user_input: prompt.user_input,
+    use_case: prompt.use_case,
+    rating: prompt.rating,
   };
 }
 
@@ -62,6 +66,9 @@ export function PromptLibrary() {
           prompt.title,
           prompt.content,
           prompt.category,
+          prompt.source_framework || "",
+          prompt.user_input || "",
+          prompt.use_case || "",
           ...prompt.tags,
         ].join(" ").toLowerCase();
         const matchesSearch = !normalizedSearch || searchable.includes(normalizedSearch);
@@ -116,8 +123,13 @@ export function PromptLibrary() {
     });
   };
 
-  const handleCopy = (content: string) => {
-    navigator.clipboard.writeText(content);
+  const handleCopy = async (prompt: Prompt) => {
+    await navigator.clipboard.writeText(prompt.content);
+    await savePrompt({
+      ...prompt,
+      use_count: (prompt.use_count || 0) + 1,
+      updated_at: new Date().toISOString(),
+    });
   };
 
   return (
@@ -220,7 +232,7 @@ export function PromptLibrary() {
                     <button onClick={() => toggleFavorite(prompt)} className="p-1 text-muted-foreground transition-colors hover:text-yellow-500" title="收藏">
                       <Star className={`h-4 w-4 ${prompt.is_favorite ? "fill-current text-yellow-500" : ""}`} />
                     </button>
-                    <button onClick={() => handleCopy(prompt.content)} className="p-1 text-muted-foreground transition-colors hover:text-foreground" title="复制">
+                    <button onClick={() => void handleCopy(prompt)} className="p-1 text-muted-foreground transition-colors hover:text-foreground" title="复制">
                       <Copy className="h-4 w-4" />
                     </button>
                     {isEditing ? (
@@ -265,9 +277,47 @@ export function PromptLibrary() {
                         className="rounded-md border border-input bg-background px-3 py-2 text-sm"
                       />
                     </div>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <input
+                        value={draft.use_case || ""}
+                        onChange={(event) => setDraft({ ...draft, use_case: event.target.value || null })}
+                        placeholder="用途类型"
+                        className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      />
+                      <input
+                        value={draft.source_framework || ""}
+                        onChange={(event) => setDraft({ ...draft, source_framework: event.target.value || null })}
+                        placeholder="框架"
+                        className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      />
+                      <select
+                        value={draft.rating ?? ""}
+                        onChange={(event) => setDraft({ ...draft, rating: event.target.value ? Number(event.target.value) : null })}
+                        className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="">未评分</option>
+                        {[1, 2, 3, 4, 5].map((rating) => (
+                          <option key={rating} value={rating}>{rating} 星</option>
+                        ))}
+                      </select>
+                    </div>
+                    <textarea
+                      value={draft.user_input || ""}
+                      onChange={(event) => setDraft({ ...draft, user_input: event.target.value || null })}
+                      rows={3}
+                      placeholder="用户原始输入"
+                      className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
                   </div>
                 ) : (
-                  <p className="mb-2 line-clamp-3 text-sm text-muted-foreground text-wrap-anywhere">{prompt.content}</p>
+                  <>
+                    <p className="mb-2 line-clamp-3 text-sm text-muted-foreground text-wrap-anywhere">{prompt.content}</p>
+                    {prompt.user_input && (
+                      <p className="mb-2 line-clamp-2 text-xs text-muted-foreground text-wrap-anywhere">
+                        原始需求：{prompt.user_input}
+                      </p>
+                    )}
+                  </>
                 )}
 
                 <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -284,6 +334,9 @@ export function PromptLibrary() {
                     </button>
                   ))}
                   {prompt.source_framework && <span>框架：{prompt.source_framework}</span>}
+                  {prompt.use_case && <span>用途：{prompt.use_case}</span>}
+                  {prompt.rating && <span>评分：{prompt.rating}/5</span>}
+                  <span>使用：{prompt.use_count}</span>
                   {prompt.source_session_title && <span>来源：{prompt.source_session_title}</span>}
                   <span className="ml-auto shrink-0">{new Date(prompt.updated_at || prompt.created_at).toLocaleDateString("zh-CN")}</span>
                 </div>
