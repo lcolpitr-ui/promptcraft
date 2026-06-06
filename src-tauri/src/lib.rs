@@ -7,7 +7,7 @@ use tauri::Manager;
 use tokio::sync::Mutex;
 
 mod crypto;
-use crypto::{encrypt_api_key, decrypt_api_key};
+use crypto::{delete_api_key, decrypt_legacy_api_key, load_api_key, store_api_key};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Prompt {
@@ -37,6 +37,7 @@ pub struct ChatMessage {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default)]
     pub api_key: String,
     pub api_endpoint: String,
     pub model: String,
@@ -53,6 +54,7 @@ pub struct AiRequest {
     pub model: String,
     pub api_key: String,
     pub api_endpoint: String,
+    pub request_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -96,6 +98,18 @@ fn normalize_api_endpoint(endpoint: &str) -> Result<String, String> {
     Ok(format!("{}/chat/completions", endpoint))
 }
 
+fn parse_json_field<T>(record_type: &str, record_id: &str, field_name: &str, value: &str) -> Result<T, String>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    serde_json::from_str(value).map_err(|e| {
+        format!(
+            "{} 记录 {} 的 {} 字段 JSON 解析失败: {}",
+            record_type, record_id, field_name, e
+        )
+    })
+}
+
 // 任务管理器 - 用于跟踪和取消请求
 struct TaskManager {
     cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
@@ -131,6 +145,12 @@ impl TaskManager {
     }
 }
 
+async fn wait_until_cancelled(cancel_flag: Arc<AtomicBool>) {
+    while !cancel_flag.load(Ordering::SeqCst) {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 #[tauri::command]
 async fn save_prompt(state: tauri::State<'_, AppState>, prompt: Prompt) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -147,21 +167,30 @@ async fn get_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<Prompt>, S
     let mut stmt = db
         .prepare("SELECT id, title, content, category, tags, created_at FROM prompts ORDER BY created_at DESC")
         .map_err(|e| e.to_string())?;
-    let prompts = stmt
+    let rows = stmt
         .query_map([], |row| {
-            let tags_str: String = row.get(4)?;
-            Ok(Prompt {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                content: row.get(2)?,
-                category: row.get(3)?,
-                tags: serde_json::from_str(&tags_str).unwrap_or_default(),
-                created_at: row.get(5)?,
-            })
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+            ))
         })
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
+        .map_err(|e| e.to_string())?;
+    let mut prompts = Vec::new();
+    for row in rows {
+        let (id, title, content, category, tags_str, created_at) = row.map_err(|e| e.to_string())?;
+        prompts.push(Prompt {
+            tags: parse_json_field("prompt", &id, "tags", &tags_str)?,
+            id,
+            title,
+            content,
+            category,
+            created_at,
+        });
+    }
     Ok(prompts)
 }
 
@@ -196,21 +225,30 @@ async fn get_conversations(state: tauri::State<'_, AppState>) -> Result<Vec<Conv
     let mut stmt = db
         .prepare("SELECT id, title, concept, messages, framework, created_at FROM conversations ORDER BY created_at DESC")
         .map_err(|e| e.to_string())?;
-    let convs = stmt
+    let rows = stmt
         .query_map([], |row| {
-            let msg_str: String = row.get(3)?;
-            Ok(Conversation {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                concept: row.get(2)?,
-                messages: serde_json::from_str(&msg_str).unwrap_or_default(),
-                framework: row.get(4)?,
-                created_at: row.get(5)?,
-            })
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+            ))
         })
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
+        .map_err(|e| e.to_string())?;
+    let mut convs = Vec::new();
+    for row in rows {
+        let (id, title, concept, msg_str, framework, created_at) = row.map_err(|e| e.to_string())?;
+        convs.push(Conversation {
+            messages: parse_json_field("conversation", &id, "messages", &msg_str)?,
+            id,
+            title,
+            concept,
+            framework,
+            created_at,
+        });
+    }
     Ok(convs)
 }
 
@@ -245,21 +283,30 @@ async fn get_custom_frameworks(state: tauri::State<'_, AppState>) -> Result<Vec<
     let mut stmt = db
         .prepare("SELECT id, name, description, best_for, template, created_at FROM custom_frameworks ORDER BY created_at DESC")
         .map_err(|e| e.to_string())?;
-    let frameworks = stmt
+    let rows = stmt
         .query_map([], |row| {
-            let best_for_str: String = row.get(3)?;
-            Ok(CustomFramework {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                best_for: serde_json::from_str(&best_for_str).unwrap_or_default(),
-                template: row.get(4)?,
-                created_at: row.get(5)?,
-            })
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+            ))
         })
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
+        .map_err(|e| e.to_string())?;
+    let mut frameworks = Vec::new();
+    for row in rows {
+        let (id, name, description, best_for_str, template, created_at) = row.map_err(|e| e.to_string())?;
+        frameworks.push(CustomFramework {
+            best_for: parse_json_field("custom_framework", &id, "best_for", &best_for_str)?,
+            id,
+            name,
+            description,
+            template,
+            created_at,
+        });
+    }
     Ok(frameworks)
 }
 
@@ -282,13 +329,21 @@ async fn get_settings() -> Result<Settings, String> {
         let mut settings: Settings = serde_json::from_str(&content).map_err(|e| e.to_string())?;
 
         if !settings.api_key.is_empty() {
-            settings.api_key = decrypt_api_key(&settings.api_key).unwrap_or_default();
+            let legacy_api_key = decrypt_legacy_api_key(&settings.api_key)
+                .ok_or("旧版 API Key 解密失败，请重新在设置中保存 API Key")?;
+            if !legacy_api_key.is_empty() {
+                store_api_key(&legacy_api_key)?;
+            }
+            settings.api_key.clear();
+            let sanitized = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+            std::fs::write(&settings_path, sanitized).map_err(|e| e.to_string())?;
         }
 
+        settings.api_key = load_api_key()?;
         Ok(settings)
     } else {
         Ok(Settings {
-            api_key: String::new(),
+            api_key: load_api_key()?,
             api_endpoint: "https://api.deepseek.com".to_string(),
             model: "deepseek-chat".to_string(),
             language: "zh".to_string(),
@@ -308,9 +363,12 @@ async fn save_settings(settings: Settings) -> Result<(), String> {
 
     let mut settings_to_save = settings;
     settings_to_save.api_endpoint = normalize_api_endpoint(&settings_to_save.api_endpoint)?;
-    if !settings_to_save.api_key.is_empty() {
-        settings_to_save.api_key = encrypt_api_key(&settings_to_save.api_key);
+    if settings_to_save.api_key.trim().is_empty() {
+        delete_api_key()?;
+    } else {
+        store_api_key(&settings_to_save.api_key)?;
     }
+    settings_to_save.api_key.clear();
 
     let content = serde_json::to_string_pretty(&settings_to_save).map_err(|e| e.to_string())?;
     std::fs::write(&file_path, content).map_err(|e| e.to_string())?;
@@ -325,7 +383,10 @@ async fn call_ai_api(
     let api_endpoint = normalize_api_endpoint(&request.api_endpoint)?;
 
     // 生成请求 ID
-    let request_id = uuid::Uuid::new_v4().to_string();
+    let request_id = request.request_id.trim().to_string();
+    if request_id.is_empty() {
+        return Err("request_id 不能为空".to_string());
+    }
 
     // 创建取消标志
     let cancel_flag = state.task_manager.create_task(request_id.clone()).await;
@@ -362,15 +423,16 @@ async fn call_ai_api(
     });
 
     // 发送请求
-    let response = client
+    let response_future = client
         .post(&api_endpoint)
         .header("Authorization", format!("Bearer {}", request.api_key))
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
         .json(&body)
-        .send()
-        .await
-        .map_err(|e| {
+        .send();
+
+    let response = tokio::select! {
+        result = response_future => result.map_err(|e| {
             if cancel_flag.load(Ordering::SeqCst) {
                 "REQUEST_CANCELLED".to_string()
             } else if e.is_timeout() {
@@ -380,7 +442,12 @@ async fn call_ai_api(
             } else {
                 format!("请求失败: {}", e)
             }
-        })?;
+        })?,
+        _ = wait_until_cancelled(cancel_flag.clone()) => {
+            state.task_manager.remove_task(&request_id).await;
+            return Err("REQUEST_CANCELLED".to_string());
+        }
+    };
 
     // 检查是否被取消
     if cancel_flag.load(Ordering::SeqCst) {
@@ -395,7 +462,13 @@ async fn call_ai_api(
         return Err(format!("API 返回错误 ({}): {}", status, error_text));
     }
 
-    let response_text = response.text().await.map_err(|e| format!("读取响应失败: {}", e))?;
+    let response_text = tokio::select! {
+        result = response.text() => result.map_err(|e| format!("读取响应失败: {}", e))?,
+        _ = wait_until_cancelled(cancel_flag.clone()) => {
+            state.task_manager.remove_task(&request_id).await;
+            return Err("REQUEST_CANCELLED".to_string());
+        }
+    };
 
     // 再次检查是否被取消
     if cancel_flag.load(Ordering::SeqCst) {
@@ -508,4 +581,47 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_deepseek_base_endpoint() {
+        let endpoint = normalize_api_endpoint("https://api.deepseek.com").unwrap();
+
+        assert_eq!(endpoint, "https://api.deepseek.com/chat/completions");
+    }
+
+    #[test]
+    fn normalizes_openai_base_endpoint() {
+        let endpoint = normalize_api_endpoint("https://api.openai.com").unwrap();
+
+        assert_eq!(endpoint, "https://api.openai.com/v1/chat/completions");
+    }
+
+    #[test]
+    fn keeps_complete_chat_completions_endpoint() {
+        let endpoint = normalize_api_endpoint("https://example.com/v1/chat/completions").unwrap();
+
+        assert_eq!(endpoint, "https://example.com/v1/chat/completions");
+    }
+
+    #[test]
+    fn rejects_non_https_non_localhost_endpoint() {
+        let error = normalize_api_endpoint("http://example.com").unwrap_err();
+
+        assert!(error.contains("HTTPS"));
+    }
+
+    #[test]
+    fn parse_json_field_returns_record_context_on_failure() {
+        let error = parse_json_field::<Vec<String>>("prompt", "bad-id", "tags", "not-json")
+            .unwrap_err();
+
+        assert!(error.contains("prompt"));
+        assert!(error.contains("bad-id"));
+        assert!(error.contains("tags"));
+    }
 }

@@ -10,15 +10,15 @@ PromptCraft 是一款基于 Tauri 的本地桌面 AI 提示词打磨工具。它
 - 自定义框架：可以新增、保存和删除自己的提示词模板。
 - 多轮对话：保存对话标题、消息历史和关联框架。
 - 提示词库：可保存、搜索、复制和删除常用提示词。
-- API Key 本地加密：API Key 会以加密形式保存在本机配置文件中。
+- API Key 系统凭据存储：API Key 会保存到系统凭据服务中，配置文件不再保存可逆弱加密密钥。
 
 ## 下载
 
-最新版本：v0.2.6
+最新版本：v0.2.7
 
-- Windows 安装程序：[PromptCraft_0.2.6_x64-setup.exe](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.6/PromptCraft_0.2.6_x64-setup.exe)
-- Windows MSI 安装包：[PromptCraft_0.2.6_x64_en-US.msi](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.6/PromptCraft_0.2.6_x64_en-US.msi)
-- Release 页面：[PromptCraft v0.2.6](https://github.com/lcolpitr-ui/promptcraft/releases/tag/v0.2.6)
+- Windows 安装程序：[PromptCraft_0.2.7_x64-setup.exe](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.7/PromptCraft_0.2.7_x64-setup.exe)
+- Windows MSI 安装包：[PromptCraft_0.2.7_x64_en-US.msi](https://github.com/lcolpitr-ui/promptcraft/releases/download/v0.2.7/PromptCraft_0.2.7_x64_en-US.msi)
+- Release 页面：[PromptCraft v0.2.7](https://github.com/lcolpitr-ui/promptcraft/releases/tag/v0.2.7)
 
 如果 Windows 弹出安全提示，请确认文件来自本仓库的 Release 页面后再运行。
 
@@ -73,6 +73,8 @@ PromptCraft 的数据保存在本机，包括：
 - 自定义框架
 - 设置文件
 
+API Key 不再写入 `settings.json`。程序会优先使用系统凭据存储：Windows Credential Manager、macOS Keychain、Linux Secret Service/keyring。旧版本配置中的弱加密 API Key 会在首次读取时迁移到系统凭据存储，并从配置文件中移除。
+
 Windows 上设置文件位于：
 
 ```text
@@ -103,6 +105,8 @@ npm.cmd install
 
 ### 启动开发模式
 
+完整桌面功能需要通过 Tauri 启动：
+
 ```bash
 npm run tauri dev
 ```
@@ -112,6 +116,14 @@ npm run tauri dev
 ```bash
 npm.cmd run tauri dev
 ```
+
+也可以只启动 Vite 前端预览：
+
+```bash
+npm run dev
+```
+
+纯前端预览没有 Tauri runtime，数据库、系统凭据和真实后端命令会使用本地 mock/localStorage fallback；完整功能和真实桌面行为请使用 `npm run tauri dev`。
 
 ### 构建前端
 

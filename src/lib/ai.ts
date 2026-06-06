@@ -1,6 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
 import { getSystemPrompt } from "./prompts";
-import type { PromptFramework } from "./frameworks";
+import { FRAMEWORKS, type PromptFramework } from "./frameworks";
+import { safeInvoke } from "./tauri";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -12,6 +12,7 @@ export interface AiRequest {
   model: string;
   api_key: string;
   api_endpoint: string;
+  request_id: string;
 }
 
 export interface AiResponse {
@@ -77,8 +78,10 @@ export async function sendMessage(
   userMessage: string,
   history: ChatMessage[],
   settings?: { apiKey: string; apiEndpoint: string; model: string } | null,
-  framework?: PromptFramework | null
-): Promise<string | null> {
+  framework?: PromptFramework | null,
+  requestId?: string,
+  availableFrameworks: PromptFramework[] = FRAMEWORKS
+): Promise<AiResponse | null> {
   // 如果没有传入设置，尝试从存储中获取
   const effectiveSettings = settings || getStoredSettings();
 
@@ -87,7 +90,7 @@ export async function sendMessage(
   }
 
   // 根据用户输入和选定框架生成系统提示词
-  const systemPrompt = getSystemPrompt(userMessage, framework);
+  const systemPrompt = getSystemPrompt(userMessage, framework, availableFrameworks);
 
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
@@ -96,16 +99,17 @@ export async function sendMessage(
   ];
 
   try {
-    const response = await invoke<AiResponse>("call_ai_api", {
+    const response = await safeInvoke<AiResponse>("call_ai_api", {
       request: {
         messages,
         model: effectiveSettings.model || "deepseek-chat",
         api_key: effectiveSettings.apiKey,
         api_endpoint: effectiveSettings.apiEndpoint || "https://api.deepseek.com",
+        request_id: requestId || crypto.randomUUID(),
       },
     });
 
-    return response.content;
+    return response;
   } catch (error) {
     // 如果是取消请求，返回 null
     if (error === "REQUEST_CANCELLED") {

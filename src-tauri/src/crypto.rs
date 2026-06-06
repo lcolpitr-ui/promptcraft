@@ -1,8 +1,36 @@
-/// 简单的 XOR 加密（基于机器特征）
-/// 注意：这不是军事级加密，只是防止明文存储
-/// 生产环境应使用系统密钥链（Windows Credential Manager）
+const SERVICE_NAME: &str = "PromptCraft";
+const API_KEY_USER: &str = "api_key";
 
-/// 获取机器特定的密钥字节
+fn credential_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new(SERVICE_NAME, API_KEY_USER)
+        .map_err(|e| format!("无法访问系统凭据存储: {}", e))
+}
+
+pub fn store_api_key(api_key: &str) -> Result<(), String> {
+    if api_key.trim().is_empty() {
+        return delete_api_key();
+    }
+
+    credential_entry()?
+        .set_password(api_key)
+        .map_err(|e| format!("保存 API Key 到系统凭据存储失败: {}", e))
+}
+
+pub fn load_api_key() -> Result<String, String> {
+    match credential_entry()?.get_password() {
+        Ok(api_key) => Ok(api_key),
+        Err(keyring::Error::NoEntry) => Ok(String::new()),
+        Err(e) => Err(format!("读取系统凭据存储中的 API Key 失败: {}", e)),
+    }
+}
+
+pub fn delete_api_key() -> Result<(), String> {
+    match credential_entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(format!("删除系统凭据存储中的 API Key 失败: {}", e)),
+    }
+}
+
 fn get_machine_key_bytes() -> Vec<u8> {
     let machine_id = format!(
         "{}-{}-promptcraft-salt",
@@ -12,35 +40,19 @@ fn get_machine_key_bytes() -> Vec<u8> {
     machine_id.into_bytes()
 }
 
-/// 简单 XOR 加密 + Base64 编码
-pub fn encrypt_api_key(api_key: &str) -> String {
-    if api_key.is_empty() {
-        return String::new();
-    }
-
-    let key = get_machine_key_bytes();
-    let encrypted: Vec<u8> = api_key
-        .bytes()
-        .enumerate()
-        .map(|(i, b)| b ^ key[i % key.len()])
-        .collect();
-
-    // 转换为十六进制字符串
-    encrypted.iter().map(|b| format!("{:02x}", b)).collect()
-}
-
-/// 解密十六进制编码的 API Key
-pub fn decrypt_api_key(encrypted_hex: &str) -> Option<String> {
+pub fn decrypt_legacy_api_key(encrypted_hex: &str) -> Option<String> {
     if encrypted_hex.is_empty() {
         return Some(String::new());
     }
 
-    // 从十六进制解码
+    if encrypted_hex.len() % 2 != 0 {
+        return None;
+    }
+
     let encrypted: Vec<u8> = (0..encrypted_hex.len())
         .step_by(2)
-        .filter_map(|i| encrypted_hex.get(i..i + 2))
-        .filter_map(|hex| u8::from_str_radix(hex, 16).ok())
-        .collect();
+        .map(|i| encrypted_hex.get(i..i + 2).and_then(|hex| u8::from_str_radix(hex, 16).ok()))
+        .collect::<Option<Vec<u8>>>()?;
 
     let key = get_machine_key_bytes();
     let decrypted: Vec<u8> = encrypted
@@ -52,19 +64,32 @@ pub fn decrypt_api_key(encrypted_hex: &str) -> Option<String> {
     String::from_utf8(decrypted).ok()
 }
 
-// hostname 模块（简化版，避免外部依赖）
+#[cfg(test)]
+pub fn encrypt_legacy_api_key_for_test(api_key: &str) -> String {
+    if api_key.is_empty() {
+        return String::new();
+    }
+
+    let key = get_machine_key_bytes();
+    api_key
+        .bytes()
+        .enumerate()
+        .map(|(i, b)| format!("{:02x}", b ^ key[i % key.len()]))
+        .collect()
+}
+
 mod hostname {
     pub fn get() -> Result<std::ffi::OsString, std::io::Error> {
         #[cfg(target_os = "windows")]
         {
             std::env::var("COMPUTERNAME")
-                .map(|s| std::ffi::OsString::from(s))
+                .map(std::ffi::OsString::from)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
         }
         #[cfg(not(target_os = "windows"))]
         {
             std::env::var("HOSTNAME")
-                .map(|s| std::ffi::OsString::from(s))
+                .map(std::ffi::OsString::from)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
         }
     }
@@ -75,21 +100,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_encrypt_decrypt() {
+    fn decrypts_legacy_api_key() {
         let api_key = "sk-test123456789";
-        let encrypted = encrypt_api_key(api_key);
-        assert_ne!(encrypted, api_key);
+        let encrypted = encrypt_legacy_api_key_for_test(api_key);
 
-        let decrypted = decrypt_api_key(&encrypted).unwrap();
+        let decrypted = decrypt_legacy_api_key(&encrypted).unwrap();
+
         assert_eq!(decrypted, api_key);
     }
 
     #[test]
-    fn test_empty_key() {
-        let encrypted = encrypt_api_key("");
-        assert!(encrypted.is_empty());
-
-        let decrypted = decrypt_api_key("").unwrap();
-        assert!(decrypted.is_empty());
+    fn rejects_malformed_legacy_api_key() {
+        assert!(decrypt_legacy_api_key("not-hex").is_none());
     }
 }

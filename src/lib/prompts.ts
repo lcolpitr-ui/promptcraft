@@ -41,9 +41,10 @@ ${fieldList}
 
 export function getSystemPrompt(
   userInput?: string,
-  explicitFramework?: PromptFramework | null
+  explicitFramework?: PromptFramework | null,
+  availableFrameworks?: PromptFramework[]
 ): string {
-  const framework = explicitFramework || (userInput ? matchFramework(userInput) : null);
+  const framework = explicitFramework || (userInput ? matchFramework(userInput, availableFrameworks) : null);
 
   if (!framework) {
     return BASE_SYSTEM_PROMPT;

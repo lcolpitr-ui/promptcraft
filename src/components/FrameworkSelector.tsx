@@ -1,15 +1,18 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useAppStore } from "../stores/appStore";
-import { FRAMEWORKS } from "../lib/frameworks";
 import { Zap, ChevronDown, Check } from "lucide-react";
 
 export function FrameworkSelector() {
-  const { frameworkMode, selectedFramework, setFrameworkMode, selectFramework } = useAppStore();
+  const { frameworkMode, selectedFramework, availableFrameworks, setFrameworkMode, selectFramework, loadCustomFrameworks } = useAppStore();
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void loadCustomFrameworks();
+  }, [loadCustomFrameworks]);
 
   // 计算下拉菜单位置
   const updatePosition = () => {
@@ -67,7 +70,7 @@ export function FrameworkSelector() {
           {!selectedFramework && <Check className="h-4 w-4 shrink-0 text-primary" />}
         </button>
         <div className="border-t border-border my-1" />
-        {FRAMEWORKS.map((fw) => (
+        {availableFrameworks.map((fw) => (
           <button
             key={fw.id}
             onClick={() => {

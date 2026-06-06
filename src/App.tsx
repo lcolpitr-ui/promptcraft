@@ -10,25 +10,35 @@ import {
   BookOpen,
   Settings as SettingsIcon,
   Sparkles,
+  AlertCircle,
+  X,
 } from "lucide-react";
 
 type Page = "chat" | "library" | "settings" | "frameworks";
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>("chat");
-  const { loadSettings, loadConversations, createConversation } = useAppStore();
+  const {
+    loadSettings,
+    loadConversations,
+    createConversation,
+    loadCustomFrameworks,
+    dataError,
+    clearDataError,
+  } = useAppStore();
 
   useEffect(() => {
     // 加载设置和会话历史
     loadSettings();
+    loadCustomFrameworks();
     loadConversations().then(() => {
       // 如果没有历史会话，创建一个新的
       const { conversations } = useAppStore.getState();
       if (conversations.length === 0) {
         createConversation();
       }
-    });
-  }, [createConversation, loadConversations, loadSettings]); // 只在组件挂载时执行一次
+    }).catch(() => undefined);
+  }, [createConversation, loadConversations, loadSettings, loadCustomFrameworks]); // 只在组件挂载时执行一次
 
   const navItems = [
     { id: "chat" as Page, label: "对话", icon: MessageSquare },
@@ -80,16 +90,31 @@ function App() {
         )}
 
         <div className="hidden border-t border-border p-4 sm:block">
-          <p className="text-xs text-muted-foreground text-center">v0.2.6</p>
+          <p className="text-xs text-muted-foreground text-center">v0.2.7</p>
         </div>
       </nav>
 
       {/* Main content */}
-      <main className="min-w-0 flex-1 overflow-hidden">
-        {currentPage === "chat" && <ChatView />}
-        {currentPage === "library" && <PromptLibrary />}
-        {currentPage === "frameworks" && <FrameworkSubmit />}
-        {currentPage === "settings" && <Settings />}
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {dataError && (
+          <div className="flex min-w-0 items-start gap-2 border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-sm text-yellow-700 dark:text-yellow-300">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1 text-wrap-anywhere">{dataError}</span>
+            <button
+              onClick={clearDataError}
+              className="shrink-0 rounded p-0.5 transition-colors hover:bg-yellow-500/20"
+              title="关闭"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          {currentPage === "chat" && <ChatView />}
+          {currentPage === "library" && <PromptLibrary />}
+          {currentPage === "frameworks" && <FrameworkSubmit />}
+          {currentPage === "settings" && <Settings />}
+        </div>
       </main>
     </div>
   );

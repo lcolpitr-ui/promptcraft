@@ -33,6 +33,12 @@ src-tauri/*.dmg
 src-tauri/*.AppImage
 
 # Build artifacts
+*.exe
+*.msi
+*.nsis.zip
+*.sig
+**/bundle/
+**/target/release/
 *.bak
 *.tmp
 

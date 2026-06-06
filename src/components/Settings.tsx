@@ -43,7 +43,7 @@ export function Settings() {
   const isValidEndpoint = (url: string) => {
     try {
       const parsed = new URL(url);
-      return parsed.protocol === "https:";
+      return parsed.protocol === "https:" || parsed.hostname === "localhost";
     } catch {
       return false;
     }

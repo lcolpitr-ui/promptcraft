@@ -222,19 +222,28 @@ ___`
 ];
 
 // 智能匹配最佳框架
-export function matchFramework(userInput: string): PromptFramework {
+export function matchFramework(
+  userInput: string,
+  frameworks: PromptFramework[] = FRAMEWORKS
+): PromptFramework {
   const input = userInput.toLowerCase();
 
   // 计算每个框架的匹配分数
-  const scores = FRAMEWORKS.map(fw => {
+  const scores = frameworks.map(fw => {
     let score = 0;
+    const searchableFields = [fw.name, fw.fullName, fw.description];
+    searchableFields.forEach(field => {
+      if (field.toLowerCase().includes(input) || input.includes(field.toLowerCase())) {
+        score += 2;
+      }
+    });
     fw.keywords.forEach(keyword => {
-      if (input.includes(keyword)) {
+      if (input.includes(keyword.toLowerCase())) {
         score += 2;
       }
     });
     fw.bestFor.forEach(area => {
-      if (input.includes(area)) {
+      if (input.includes(area.toLowerCase())) {
         score += 1;
       }
     });
@@ -246,7 +255,7 @@ export function matchFramework(userInput: string): PromptFramework {
 
   // 如果没有明显匹配，返回 CO-STAR 作为默认
   if (scores[0].score === 0) {
-    return FRAMEWORKS.find(fw => fw.id === "costar")!;
+    return frameworks.find(fw => fw.id === "costar") || frameworks[0];
   }
 
   return scores[0].framework;

@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import { sendMessage, type ChatMessage } from "../lib/ai";
-import type { PromptFramework } from "../lib/frameworks";
+import { FRAMEWORKS, type PromptFramework } from "../lib/frameworks";
+import { safeInvoke } from "../lib/tauri";
 
 export interface Prompt {
   id: string;
@@ -30,6 +30,15 @@ export interface Settings {
   defaultFramework: string | null;
 }
 
+export interface CustomFramework {
+  id: string;
+  name: string;
+  description: string;
+  best_for: string[];
+  template: string;
+  created_at: string;
+}
+
 interface AppState {
   // 多会话管理
   conversations: Conversation[];
@@ -39,6 +48,8 @@ interface AppState {
   // 框架选择
   frameworkMode: "auto" | "manual";
   selectedFramework: PromptFramework | null;
+  customFrameworks: CustomFramework[];
+  availableFrameworks: PromptFramework[];
 
   // 当前消息
   messages: ChatMessage[];
@@ -52,6 +63,7 @@ interface AppState {
   // Settings
   settings: Settings;
   settingsLoaded: boolean;
+  dataError: string | null;
 
   // 会话管理 Actions
   loadConversations: () => Promise<void>;
@@ -63,6 +75,7 @@ interface AppState {
   // 框架选择 Actions
   setFrameworkMode: (mode: "auto" | "manual") => void;
   selectFramework: (framework: PromptFramework | null) => void;
+  loadCustomFrameworks: () => Promise<void>;
 
   // 聊天 Actions
   sendMessage: (content: string) => Promise<void>;
@@ -79,6 +92,7 @@ interface AppState {
   // Settings Actions
   loadSettings: () => Promise<void>;
   updateSettings: (settings: Partial<Settings>) => Promise<boolean>;
+  clearDataError: () => void;
 }
 
 // 生成唯一ID
@@ -88,6 +102,26 @@ const generateId = () => Date.now().toString(36) + Math.random().toString(36).su
 let isCancelled = false;
 let currentRequestId: string | null = null;
 
+function customFrameworkToPromptFramework(framework: CustomFramework): PromptFramework {
+  return {
+    id: `custom:${framework.id}`,
+    name: framework.name,
+    fullName: framework.name,
+    description: framework.description,
+    bestFor: framework.best_for,
+    keywords: [
+      framework.name,
+      framework.description,
+      ...framework.best_for,
+    ].filter(Boolean),
+    template: framework.template,
+  };
+}
+
+function getAvailableFrameworks(customFrameworks: CustomFramework[]): PromptFramework[] {
+  return [...FRAMEWORKS, ...customFrameworks.map(customFrameworkToPromptFramework)];
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial state
   conversations: [],
@@ -95,6 +129,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentConversation: null,
   frameworkMode: "auto",
   selectedFramework: null,
+  customFrameworks: [],
+  availableFrameworks: FRAMEWORKS,
   messages: [],
   isLoading: false,
   prompts: [],
@@ -109,11 +145,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     defaultFramework: null,
   },
   settingsLoaded: false,
+  dataError: null,
 
   // 加载会话历史
   loadConversations: async () => {
     try {
-      const conversations = await invoke<Conversation[]>("get_conversations");
+      const conversations = await safeInvoke<Conversation[]>("get_conversations");
       if (conversations.length > 0) {
         set({
           conversations,
@@ -124,6 +161,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch (error) {
       console.error("Failed to load conversations:", error);
+      set({ dataError: `读取对话历史失败：${error}` });
+      throw error;
     }
   },
 
@@ -165,7 +204,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 保存到后端
     try {
-      await invoke("save_conversation", { conv: newConv });
+      await safeInvoke("save_conversation", { conv: newConv });
     } catch (error) {
       console.error("Failed to save conversation:", error);
     }
@@ -199,7 +238,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 从后端删除
     try {
-      await invoke("delete_conversation", { id });
+      await safeInvoke("delete_conversation", { id });
     } catch (error) {
       console.error("Failed to delete conversation:", error);
     }
@@ -221,7 +260,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const conv = conversations.find((c) => c.id === id);
     if (conv) {
       try {
-        await invoke("save_conversation", { conv: { ...conv, title } });
+        await safeInvoke("save_conversation", { conv: { ...conv, title } });
       } catch (error) {
         console.error("Failed to update conversation title:", error);
       }
@@ -239,9 +278,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ selectedFramework: framework });
   },
 
+  loadCustomFrameworks: async () => {
+    try {
+      const customFrameworks = await safeInvoke<CustomFramework[]>("get_custom_frameworks");
+      const availableFrameworks = getAvailableFrameworks(customFrameworks);
+      set((state) => ({
+        customFrameworks,
+        availableFrameworks,
+        selectedFramework: state.selectedFramework && availableFrameworks.some((fw) => fw.id === state.selectedFramework?.id)
+          ? state.selectedFramework
+          : null,
+      }));
+    } catch (error) {
+      console.error("Failed to load custom frameworks:", error);
+      set({ dataError: `读取自定义框架失败：${error}` });
+    }
+  },
+
   // 发送消息
   sendMessage: async (content: string) => {
-    const { messages, settings, frameworkMode, selectedFramework, currentConversationId } = get();
+    const { messages, settings, frameworkMode, selectedFramework, currentConversationId, availableFrameworks } = get();
 
     // 如果没有当前会话，创建一个
     if (!currentConversationId) {
@@ -252,6 +308,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 重置取消标志
     isCancelled = false;
+    const requestId = crypto.randomUUID();
+    currentRequestId = requestId;
 
     // 添加用户消息
     const userMessage: ChatMessage = { role: "user", content };
@@ -283,15 +341,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
 
-      const result = await sendMessage(content, messages, settings, framework);
+      const result = await sendMessage(content, messages, settings, framework, requestId, availableFrameworks);
 
       // 检查是否被取消（后端返回 REQUEST_CANCELLED）
-      if (result === null || isCancelled) {
+      if (result === null || isCancelled || currentRequestId !== requestId) {
         set({ isLoading: false });
+        if (currentRequestId === requestId) {
+          currentRequestId = null;
+        }
         return;
       }
 
-      const response = result;
+      const response = result.content;
 
       const assistantMessage: ChatMessage = { role: "assistant", content: response };
       const finalMessages = [...newMessages, assistantMessage];
@@ -319,11 +380,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // 保存到后端
       try {
-        await invoke("save_conversation", { conv: updatedConv });
+        await safeInvoke("save_conversation", { conv: updatedConv });
       } catch (error) {
         console.error("Failed to save conversation:", error);
+      } finally {
+        if (currentRequestId === requestId) {
+          currentRequestId = null;
+        }
       }
     } catch (error) {
+      if (currentRequestId === requestId) {
+        currentRequestId = null;
+      }
       // 如果是用户主动取消，不显示错误
       if (isCancelled) {
         set({ isLoading: false });
@@ -353,7 +421,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 调用后端取消请求
     if (currentRequestId) {
       try {
-        await invoke("cancel_ai_request", { requestId: currentRequestId });
+        await safeInvoke("cancel_ai_request", { requestId: currentRequestId });
       } catch (error) {
         console.error("Failed to cancel request:", error);
       }
@@ -383,7 +451,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // 保存到后端
       try {
-        await invoke("save_conversation", { conv: updatedConv });
+        await safeInvoke("save_conversation", { conv: updatedConv });
       } catch (error) {
         console.error("Failed to save conversation:", error);
       }
@@ -393,17 +461,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Load prompts from database
   loadPrompts: async () => {
     try {
-      const prompts = await invoke<Prompt[]>("get_prompts");
+      const prompts = await safeInvoke<Prompt[]>("get_prompts");
       set({ prompts });
     } catch (error) {
       console.error("Failed to load prompts:", error);
+      set({ dataError: `读取提示词库失败：${error}` });
     }
   },
 
   // Save prompt to database
   savePrompt: async (prompt: Prompt) => {
     try {
-      await invoke("save_prompt", { prompt });
+      await safeInvoke("save_prompt", { prompt });
       await get().loadPrompts();
     } catch (error) {
       console.error("Failed to save prompt:", error);
@@ -413,7 +482,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Delete prompt from database
   deletePrompt: async (id: string) => {
     try {
-      await invoke("delete_prompt", { id });
+      await safeInvoke("delete_prompt", { id });
       await get().loadPrompts();
     } catch (error) {
       console.error("Failed to delete prompt:", error);
@@ -430,7 +499,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadSettings: async () => {
     if (get().settingsLoaded) return; // 防止重复加载
     try {
-      const raw = await invoke<{
+      const raw = await safeInvoke<{
         api_key: string;
         api_endpoint: string;
         model: string;
@@ -452,6 +521,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     } catch (error) {
       console.error("Failed to load settings:", error);
+      set({ dataError: `读取设置失败：${error}` });
       set({ settingsLoaded: true }); // 即使失败也标记为已加载
     }
   },
@@ -462,7 +532,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updatedSettings = { ...settings, ...newSettings };
     set({ settings: updatedSettings });
     try {
-      await invoke("save_settings", {
+      await safeInvoke("save_settings", {
         settings: {
           api_key: updatedSettings.apiKey,
           api_endpoint: updatedSettings.apiEndpoint,
@@ -480,4 +550,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       return false;
     }
   },
+
+  clearDataError: () => set({ dataError: null }),
 }));

@@ -1,22 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../stores/appStore";
+import { useAppStore, type CustomFramework } from "../stores/appStore";
 import { sendMessage } from "../lib/ai";
 import { FRAMEWORKS } from "../lib/frameworks";
+import { safeInvoke } from "../lib/tauri";
 import { Plus, Save, Sparkles, Check, Wand2, Loader2, Trash2, Eye, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
-interface CustomFramework {
-  id: string;
-  name: string;
-  description: string;
-  best_for: string[];
-  template: string;
-  created_at: string;
-}
-
 export function FrameworkSubmit() {
-  const { settings } = useAppStore();
+  const { settings, customFrameworks, loadCustomFrameworks } = useAppStore();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [template, setTemplate] = useState("");
@@ -24,7 +15,6 @@ export function FrameworkSubmit() {
   const [submitted, setSubmitted] = useState(false);
   const [showExisting, setShowExisting] = useState(false);
   const [expandedBuiltInFrameworkId, setExpandedBuiltInFrameworkId] = useState<string | null>(null);
-  const [customFrameworks, setCustomFrameworks] = useState<CustomFramework[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // AI 生成相关
@@ -33,28 +23,27 @@ export function FrameworkSubmit() {
   const [isGenerating, setIsGenerating] = useState(false);
 
   // 从数据库加载自定义框架
-  const loadCustomFrameworks = useCallback(async () => {
+  const reloadCustomFrameworks = useCallback(async () => {
     try {
-      const frameworks = await invoke<CustomFramework[]>("get_custom_frameworks");
-      setCustomFrameworks(frameworks);
+      await loadCustomFrameworks();
     } catch (error) {
       console.error("Failed to load custom frameworks:", error);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [loadCustomFrameworks]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadCustomFrameworks();
+      void reloadCustomFrameworks();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadCustomFrameworks]);
+  }, [reloadCustomFrameworks]);
 
   // 保存自定义框架到数据库
   const handleSaveFramework = async (framework: CustomFramework) => {
     try {
-      await invoke("save_custom_framework", { framework });
+      await safeInvoke("save_custom_framework", { framework });
       await loadCustomFrameworks();
     } catch (error) {
       console.error("Failed to save framework:", error);
@@ -65,7 +54,7 @@ export function FrameworkSubmit() {
   // 删除自定义框架
   const handleDeleteFramework = async (id: string) => {
     try {
-      await invoke("delete_custom_framework", { id });
+      await safeInvoke("delete_custom_framework", { id });
       await loadCustomFrameworks();
     } catch (error) {
       console.error("Failed to delete framework:", error);
@@ -107,28 +96,29 @@ export function FrameworkSubmit() {
         return;
       }
 
-      setGeneratedFramework(response);
+      const responseContent = response.content;
+      setGeneratedFramework(responseContent);
 
       // 尝试从响应中提取框架名称
-      const nameMatch = response.match(/\*\*框架名称\*\*[：:]\s*(\S+)/);
+      const nameMatch = responseContent.match(/\*\*框架名称\*\*[：:]\s*(\S+)/);
       if (nameMatch) {
         setName(nameMatch[1]);
       }
 
       // 提取适用场景
-      const bestForMatch = response.match(/\*\*适用场景\*\*[：:]\s*([\s\S]+?)(?=\n\*\*|\n\d|$)/);
+      const bestForMatch = responseContent.match(/\*\*适用场景\*\*[：:]\s*([\s\S]+?)(?=\n\*\*|\n\d|$)/);
       if (bestForMatch) {
         setBestFor(bestForMatch[1].trim().replace(/\n/g, ", "));
       }
 
       // 提取描述
-      const descMatch = response.match(/\*\*框架全称\*\*[：:]\s*([\s\S]+?)(?=\n\*\*|\n\d|$)/);
+      const descMatch = responseContent.match(/\*\*框架全称\*\*[：:]\s*([\s\S]+?)(?=\n\*\*|\n\d|$)/);
       if (descMatch) {
         setDescription(descMatch[1].trim());
       }
 
       // 提取模板
-      const templateMatch = response.match(/\*\*框架模板\*\*[：:]\s*([\s\S]+)/);
+      const templateMatch = responseContent.match(/\*\*框架模板\*\*[：:]\s*([\s\S]+)/);
       if (templateMatch) {
         setTemplate(templateMatch[1].trim());
       }
