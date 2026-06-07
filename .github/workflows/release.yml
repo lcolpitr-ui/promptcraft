@@ -9,7 +9,7 @@ on:
       tagName:
         description: "Release tag to create or update"
         required: true
-        default: "v0.2.1"
+        default: "v0.2.8"
 
 permissions:
   contents: write
@@ -57,11 +57,11 @@ jobs:
             PromptCraft Windows release.
 
             Highlights:
-            - Built-in framework cards can now expand to show each framework architecture and template.
-            - New OASIS framework based on OpenAI prompt guidance for outcome-first, evidence-aware prompts.
-            - OpenAI-compatible API endpoint normalization for DeepSeek and OpenAI base URLs.
-            - Responsive UI safeguards for long model names, API URLs, chat text, and framework labels.
-            - Compact prompt context that sends only the selected framework guide plus recent chat history.
+            - Adds a reusable material library for briefs, prompts, AI responses, examples, and anti-examples.
+            - Chat messages can be saved into the material library with editable metadata.
+            - Framework generation can reference a few relevant saved materials without flooding the context.
+            - Adds starter examples for writing, code, API docs, database design, PRD, operations copy, summaries, translation, research analysis, and planning.
+            - JSON import/export now validates backup shape, excludes API keys, and handles id conflicts.
 
             Recommended download:
             - `PromptCraft_*_x64-setup.exe` for the standard Windows installer.
