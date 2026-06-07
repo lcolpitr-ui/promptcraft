@@ -106,9 +106,24 @@ async function mockInvoke<T>(command: string, args?: MockRecord): Promise<T> {
       if (!backup || !Array.isArray(backup.prompts) || !Array.isArray(backup.conversations) || !Array.isArray(backup.custom_frameworks)) {
         throw new Error("导入文件格式无效");
       }
-      const merge = <TRecord extends MockRecord>(key: string, rows: TRecord[]) => {
+      const merge = <TRecord extends MockRecord & { id?: unknown }>(key: string, rows: TRecord[]) => {
         const existing = mode === "overwrite" ? [] : readJson<TRecord[]>(key, []);
-        writeJson(key, [...rows, ...existing.filter((item) => !rows.some((row) => row.id === item.id))]);
+        const ids = new Set(existing.map((item) => String(item.id)));
+        const normalizedRows = rows.map((row, index) => {
+          const next = { ...row };
+          let nextId = String(next.id);
+          if (ids.has(nextId)) {
+            let attempt = 1;
+            do {
+              nextId = `${String(row.id)}-import-${index + 1}-${attempt}`;
+              attempt += 1;
+            } while (ids.has(nextId));
+            next.id = nextId;
+          }
+          ids.add(nextId);
+          return next;
+        });
+        writeJson(key, [...normalizedRows, ...existing]);
       };
       merge(STORAGE_KEYS.conversations, backup.conversations as MockRecord[]);
       merge(STORAGE_KEYS.prompts, backup.prompts as MockRecord[]);

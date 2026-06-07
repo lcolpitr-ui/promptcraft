@@ -1,19 +1,21 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use tokio::sync::Mutex;
 
 mod crypto;
-use crypto::{delete_api_key, decrypt_legacy_api_key, load_api_key, store_api_key};
+use crypto::{decrypt_legacy_api_key, delete_api_key, load_api_key, store_api_key};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Prompt {
     pub id: String,
     pub title: String,
     pub content: String,
+    #[serde(default = "default_material_type")]
+    pub material_type: String,
     pub category: String,
     pub tags: Vec<String>,
     #[serde(default)]
@@ -164,6 +166,17 @@ fn default_request_timeout_secs() -> u64 {
     60
 }
 
+fn default_material_type() -> String {
+    "prompt".to_string()
+}
+
+fn is_valid_material_type(value: &str) -> bool {
+    matches!(
+        value,
+        "brief" | "prompt" | "response" | "example" | "anti_example"
+    )
+}
+
 fn clamp_temperature(value: f32) -> f32 {
     if value.is_finite() {
         value.clamp(0.0, 2.0)
@@ -187,7 +200,8 @@ fn preview_text(value: &str) -> String {
 fn extract_error_message(json: &serde_json::Value) -> Option<String> {
     json.get("error")
         .and_then(|error| {
-            error.get("message")
+            error
+                .get("message")
                 .or_else(|| error.get("detail"))
                 .and_then(|value| value.as_str())
                 .or_else(|| error.as_str())
@@ -263,7 +277,12 @@ fn extract_response_content(json: &serde_json::Value) -> Result<String, String> 
     ))
 }
 
-fn parse_json_field<T>(record_type: &str, record_id: &str, field_name: &str, value: &str) -> Result<T, String>
+fn parse_json_field<T>(
+    record_type: &str,
+    record_id: &str,
+    field_name: &str,
+    value: &str,
+) -> Result<T, String>
 where
     T: for<'de> Deserialize<'de>,
 {
@@ -321,14 +340,15 @@ async fn save_prompt(state: tauri::State<'_, AppState>, prompt: Prompt) -> Resul
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
         "INSERT OR REPLACE INTO prompts (
-            id, title, content, category, tags, is_favorite, is_pinned,
+            id, title, content, material_type, category, tags, is_favorite, is_pinned,
             source_session_id, source_session_title, source_framework, user_input,
             use_case, rating, use_count, created_at, updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
         rusqlite::params![
             prompt.id,
             prompt.title,
             prompt.content,
+            prompt.material_type,
             prompt.category,
             serde_json::to_string(&prompt.tags).map_err(|e| e.to_string())?,
             prompt.is_favorite,
@@ -343,7 +363,8 @@ async fn save_prompt(state: tauri::State<'_, AppState>, prompt: Prompt) -> Resul
             prompt.created_at,
             prompt.updated_at
         ],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -352,11 +373,11 @@ async fn get_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<Prompt>, S
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let mut stmt = db
         .prepare(
-            "SELECT id, title, content, category, tags, is_favorite, is_pinned,
+            "SELECT id, title, content, material_type, category, tags, is_favorite, is_pinned,
                 source_session_id, source_session_title, source_framework, user_input,
                 use_case, rating, use_count, created_at, updated_at
             FROM prompts
-            ORDER BY is_pinned DESC, created_at DESC"
+            ORDER BY is_pinned DESC, created_at DESC",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
@@ -367,17 +388,18 @@ async fn get_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<Prompt>, S
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
-                row.get::<_, bool>(5)?,
+                row.get::<_, String>(5)?,
                 row.get::<_, bool>(6)?,
-                row.get::<_, Option<String>>(7)?,
+                row.get::<_, bool>(7)?,
                 row.get::<_, Option<String>>(8)?,
                 row.get::<_, Option<String>>(9)?,
                 row.get::<_, Option<String>>(10)?,
                 row.get::<_, Option<String>>(11)?,
-                row.get::<_, Option<u8>>(12)?,
-                row.get::<_, u32>(13)?,
-                row.get::<_, String>(14)?,
-                row.get::<_, Option<String>>(15)?,
+                row.get::<_, Option<String>>(12)?,
+                row.get::<_, Option<u8>>(13)?,
+                row.get::<_, u32>(14)?,
+                row.get::<_, String>(15)?,
+                row.get::<_, Option<String>>(16)?,
             ))
         })
         .map_err(|e| e.to_string())?;
@@ -387,6 +409,7 @@ async fn get_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<Prompt>, S
             id,
             title,
             content,
+            material_type,
             category,
             tags_str,
             is_favorite,
@@ -406,6 +429,7 @@ async fn get_prompts(state: tauri::State<'_, AppState>) -> Result<Vec<Prompt>, S
             id,
             title,
             content,
+            material_type,
             category,
             is_favorite,
             is_pinned,
@@ -432,7 +456,10 @@ async fn delete_prompt(state: tauri::State<'_, AppState>, id: String) -> Result<
 }
 
 #[tauri::command]
-async fn save_conversation(state: tauri::State<'_, AppState>, conv: Conversation) -> Result<(), String> {
+async fn save_conversation(
+    state: tauri::State<'_, AppState>,
+    conv: Conversation,
+) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
         "INSERT OR REPLACE INTO conversations (id, title, concept, messages, framework, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -468,7 +495,8 @@ async fn get_conversations(state: tauri::State<'_, AppState>) -> Result<Vec<Conv
         .map_err(|e| e.to_string())?;
     let mut convs = Vec::new();
     for row in rows {
-        let (id, title, concept, msg_str, framework, created_at) = row.map_err(|e| e.to_string())?;
+        let (id, title, concept, msg_str, framework, created_at) =
+            row.map_err(|e| e.to_string())?;
         convs.push(Conversation {
             messages: parse_json_field("conversation", &id, "messages", &msg_str)?,
             id,
@@ -484,13 +512,19 @@ async fn get_conversations(state: tauri::State<'_, AppState>) -> Result<Vec<Conv
 #[tauri::command]
 async fn delete_conversation(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.execute("DELETE FROM conversations WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
+    db.execute(
+        "DELETE FROM conversations WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-async fn save_custom_framework(state: tauri::State<'_, AppState>, framework: CustomFramework) -> Result<(), String> {
+async fn save_custom_framework(
+    state: tauri::State<'_, AppState>,
+    framework: CustomFramework,
+) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
         "INSERT OR REPLACE INTO custom_frameworks (id, name, description, best_for, template, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -507,7 +541,9 @@ async fn save_custom_framework(state: tauri::State<'_, AppState>, framework: Cus
 }
 
 #[tauri::command]
-async fn get_custom_frameworks(state: tauri::State<'_, AppState>) -> Result<Vec<CustomFramework>, String> {
+async fn get_custom_frameworks(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<CustomFramework>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let mut stmt = db
         .prepare("SELECT id, name, description, best_for, template, created_at FROM custom_frameworks ORDER BY created_at DESC")
@@ -526,7 +562,8 @@ async fn get_custom_frameworks(state: tauri::State<'_, AppState>) -> Result<Vec<
         .map_err(|e| e.to_string())?;
     let mut frameworks = Vec::new();
     for row in rows {
-        let (id, name, description, best_for_str, template, created_at) = row.map_err(|e| e.to_string())?;
+        let (id, name, description, best_for_str, template, created_at) =
+            row.map_err(|e| e.to_string())?;
         frameworks.push(CustomFramework {
             best_for: parse_json_field("custom_framework", &id, "best_for", &best_for_str)?,
             id,
@@ -540,10 +577,16 @@ async fn get_custom_frameworks(state: tauri::State<'_, AppState>) -> Result<Vec<
 }
 
 #[tauri::command]
-async fn delete_custom_framework(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
+async fn delete_custom_framework(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.execute("DELETE FROM custom_frameworks WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
+    db.execute(
+        "DELETE FROM custom_frameworks WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -573,6 +616,12 @@ fn validate_backup(backup: &DataBackup) -> Result<(), String> {
         if prompt.id.trim().is_empty() || prompt.title.trim().is_empty() {
             return Err("导入文件包含无效提示词：id/title 不能为空".to_string());
         }
+        if !is_valid_material_type(&prompt.material_type) {
+            return Err(format!(
+                "导入文件包含无效素材类型：{}",
+                prompt.material_type
+            ));
+        }
     }
     for conv in &backup.conversations {
         if conv.id.trim().is_empty() || conv.title.trim().is_empty() {
@@ -580,11 +629,46 @@ fn validate_backup(backup: &DataBackup) -> Result<(), String> {
         }
     }
     for framework in &backup.custom_frameworks {
-        if framework.id.trim().is_empty() || framework.name.trim().is_empty() || framework.template.trim().is_empty() {
+        if framework.id.trim().is_empty()
+            || framework.name.trim().is_empty()
+            || framework.template.trim().is_empty()
+        {
             return Err("导入文件包含无效自定义框架：id/name/template 不能为空".to_string());
         }
     }
     Ok(())
+}
+
+fn record_exists(db: &rusqlite::Connection, table: &str, id: &str) -> Result<bool, String> {
+    let sql = match table {
+        "prompts" => "SELECT EXISTS(SELECT 1 FROM prompts WHERE id = ?1)",
+        "conversations" => "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
+        "custom_frameworks" => "SELECT EXISTS(SELECT 1 FROM custom_frameworks WHERE id = ?1)",
+        _ => return Err("未知导入表".to_string()),
+    };
+    let exists = db
+        .query_row(sql, rusqlite::params![id], |row| row.get::<_, i64>(0))
+        .map_err(|e| e.to_string())?;
+    Ok(exists != 0)
+}
+
+fn conflict_free_id(original: &str, index: usize) -> String {
+    format!("{}-import-{}", original, index + 1)
+}
+
+fn next_conflict_free_id(
+    db: &rusqlite::Connection,
+    table: &str,
+    original: &str,
+    index: usize,
+) -> Result<String, String> {
+    let mut candidate = conflict_free_id(original, index);
+    let mut attempt = 1;
+    while record_exists(db, table, &candidate)? {
+        candidate = format!("{}-import-{}-{}", original, index + 1, attempt);
+        attempt += 1;
+    }
+    Ok(candidate)
 }
 
 #[tauri::command]
@@ -599,9 +683,12 @@ async fn import_data(
     {
         let db = state.db.lock().map_err(|e| e.to_string())?;
         if overwrite {
-            db.execute("DELETE FROM prompts", []).map_err(|e| e.to_string())?;
-            db.execute("DELETE FROM conversations", []).map_err(|e| e.to_string())?;
-            db.execute("DELETE FROM custom_frameworks", []).map_err(|e| e.to_string())?;
+            db.execute("DELETE FROM prompts", [])
+                .map_err(|e| e.to_string())?;
+            db.execute("DELETE FROM conversations", [])
+                .map_err(|e| e.to_string())?;
+            db.execute("DELETE FROM custom_frameworks", [])
+                .map_err(|e| e.to_string())?;
         }
     }
 
@@ -609,13 +696,33 @@ async fn import_data(
     let conversation_count = backup.conversations.len();
     let framework_count = backup.custom_frameworks.len();
 
-    for prompt in backup.prompts {
+    for (index, mut prompt) in backup.prompts.into_iter().enumerate() {
+        if !overwrite {
+            let db = state.db.lock().map_err(|e| e.to_string())?;
+            if record_exists(&db, "prompts", &prompt.id)? {
+                prompt.id = next_conflict_free_id(&db, "prompts", &prompt.id, index)?;
+            }
+        }
         save_prompt(state.clone(), prompt).await?;
     }
-    for conversation in backup.conversations {
+    for (index, mut conversation) in backup.conversations.into_iter().enumerate() {
+        if !overwrite {
+            let db = state.db.lock().map_err(|e| e.to_string())?;
+            if record_exists(&db, "conversations", &conversation.id)? {
+                conversation.id =
+                    next_conflict_free_id(&db, "conversations", &conversation.id, index)?;
+            }
+        }
         save_conversation(state.clone(), conversation).await?;
     }
-    for framework in backup.custom_frameworks {
+    for (index, mut framework) in backup.custom_frameworks.into_iter().enumerate() {
+        if !overwrite {
+            let db = state.db.lock().map_err(|e| e.to_string())?;
+            if record_exists(&db, "custom_frameworks", &framework.id)? {
+                framework.id =
+                    next_conflict_free_id(&db, "custom_frameworks", &framework.id, index)?;
+            }
+        }
         save_custom_framework(state.clone(), framework).await?;
     }
 
@@ -683,7 +790,8 @@ async fn save_settings(settings: Settings) -> Result<(), String> {
     settings_to_save.api_endpoint = normalize_api_endpoint(&settings_to_save.api_endpoint)?;
     settings_to_save.temperature = clamp_temperature(settings_to_save.temperature);
     settings_to_save.max_tokens = clamp_max_tokens(settings_to_save.max_tokens);
-    settings_to_save.request_timeout_secs = clamp_timeout_secs(settings_to_save.request_timeout_secs);
+    settings_to_save.request_timeout_secs =
+        clamp_timeout_secs(settings_to_save.request_timeout_secs);
     if settings_to_save.api_key.trim().is_empty() {
         delete_api_key()?;
     } else {
@@ -738,7 +846,9 @@ async fn call_ai_api(
     // 创建 HTTP 客户端
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(clamp_timeout_secs(request.request_timeout_secs)))
+        .timeout(Duration::from_secs(clamp_timeout_secs(
+            request.request_timeout_secs,
+        )))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
@@ -815,8 +925,13 @@ async fn call_ai_api(
         return Err("REQUEST_CANCELLED".to_string());
     }
 
-    let json: serde_json::Value = serde_json::from_str(&response_text)
-        .map_err(|e| format!("响应格式不兼容：服务商没有返回有效 JSON。解析错误：{}；响应预览：{}", e, preview_text(&response_text)))?;
+    let json: serde_json::Value = serde_json::from_str(&response_text).map_err(|e| {
+        format!(
+            "响应格式不兼容：服务商没有返回有效 JSON。解析错误：{}；响应预览：{}",
+            e,
+            preview_text(&response_text)
+        )
+    })?;
 
     let content = extract_response_content(&json)?;
 
@@ -861,6 +976,7 @@ pub fn run() {
                     id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
                     content TEXT NOT NULL,
+                    material_type TEXT NOT NULL DEFAULT 'prompt',
                     category TEXT,
                     tags TEXT,
                     is_favorite INTEGER NOT NULL DEFAULT 0,
@@ -894,18 +1010,58 @@ pub fn run() {
             )
             .expect("Failed to create tables");
 
-            let _ = db.execute("ALTER TABLE conversations ADD COLUMN title TEXT NOT NULL DEFAULT '新对话'", rusqlite::params![]);
-            let _ = db.execute("ALTER TABLE conversations ADD COLUMN framework TEXT", rusqlite::params![]);
-            let _ = db.execute("ALTER TABLE prompts ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0", rusqlite::params![]);
-            let _ = db.execute("ALTER TABLE prompts ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0", rusqlite::params![]);
-            let _ = db.execute("ALTER TABLE prompts ADD COLUMN source_session_id TEXT", rusqlite::params![]);
-            let _ = db.execute("ALTER TABLE prompts ADD COLUMN source_session_title TEXT", rusqlite::params![]);
-            let _ = db.execute("ALTER TABLE prompts ADD COLUMN source_framework TEXT", rusqlite::params![]);
-            let _ = db.execute("ALTER TABLE prompts ADD COLUMN user_input TEXT", rusqlite::params![]);
-            let _ = db.execute("ALTER TABLE prompts ADD COLUMN use_case TEXT", rusqlite::params![]);
-            let _ = db.execute("ALTER TABLE prompts ADD COLUMN rating INTEGER", rusqlite::params![]);
-            let _ = db.execute("ALTER TABLE prompts ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0", rusqlite::params![]);
-            let _ = db.execute("ALTER TABLE prompts ADD COLUMN updated_at DATETIME", rusqlite::params![]);
+            let _ = db.execute(
+                "ALTER TABLE conversations ADD COLUMN title TEXT NOT NULL DEFAULT '新对话'",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE conversations ADD COLUMN framework TEXT",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE prompts ADD COLUMN material_type TEXT NOT NULL DEFAULT 'prompt'",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE prompts ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE prompts ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE prompts ADD COLUMN source_session_id TEXT",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE prompts ADD COLUMN source_session_title TEXT",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE prompts ADD COLUMN source_framework TEXT",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE prompts ADD COLUMN user_input TEXT",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE prompts ADD COLUMN use_case TEXT",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE prompts ADD COLUMN rating INTEGER",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE prompts ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0",
+                rusqlite::params![],
+            );
+            let _ = db.execute(
+                "ALTER TABLE prompts ADD COLUMN updated_at DATETIME",
+                rusqlite::params![],
+            );
 
             app.manage(AppState {
                 db: std::sync::Mutex::new(db),
@@ -976,8 +1132,8 @@ mod tests {
 
     #[test]
     fn parse_json_field_returns_record_context_on_failure() {
-        let error = parse_json_field::<Vec<String>>("prompt", "bad-id", "tags", "not-json")
-            .unwrap_err();
+        let error =
+            parse_json_field::<Vec<String>>("prompt", "bad-id", "tags", "not-json").unwrap_err();
 
         assert!(error.contains("prompt"));
         assert!(error.contains("bad-id"));

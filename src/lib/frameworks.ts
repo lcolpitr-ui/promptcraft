@@ -27,6 +27,7 @@ export interface PromptHistorySignal {
   user_input?: string | null;
   use_case?: string | null;
   output_type?: string | null;
+  material_type?: string | null;
   is_favorite?: boolean;
   favorite?: boolean;
   rating?: number | null;
@@ -386,6 +387,7 @@ function getHistoryRelevance(input: string, prompt: PromptHistorySignal): { scor
     prompt.user_input || "",
     prompt.use_case || "",
     prompt.output_type || "",
+    prompt.material_type || "",
     ...(prompt.tags || []),
   ];
   const fieldMatch = getFieldMatches(input, values, 4, "历史");
@@ -407,10 +409,12 @@ function scoreHistory(input: string, framework: PromptFramework, prompts: Prompt
     const usageCount = prompt.usage_count ?? prompt.use_count ?? 0;
     const rating = prompt.rating ?? 0;
     const isFavorite = prompt.favorite ?? prompt.is_favorite ?? false;
+    const materialBonus = prompt.material_type === "example" ? 0.7 : prompt.material_type === "anti_example" ? 0.4 : 0;
     const historyScore = Math.min(relevance.score, 6)
       + Math.min(usageCount, 10) * 0.35
       + (isFavorite ? 2.5 : 0)
-      + (rating ? Math.max(0, rating - 3) * 1.25 : 0);
+      + (rating ? Math.max(0, rating - 3) * 1.25 : 0)
+      + materialBonus;
 
     score += historyScore;
     matches.push(`历史提示词：${prompt.title || framework.name}`);

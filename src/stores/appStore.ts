@@ -3,10 +3,13 @@ import { sendMessage, type ChatMessage, type ContextTrimInfo } from "../lib/ai";
 import { FRAMEWORKS, matchFrameworkRecommendation, type FrameworkMatchResult, type PromptFramework } from "../lib/frameworks";
 import { safeInvoke } from "../lib/tauri";
 
+export type MaterialType = "brief" | "prompt" | "response" | "example" | "anti_example";
+
 export interface Prompt {
   id: string;
   title: string;
   content: string;
+  material_type: MaterialType;
   category: string;
   tags: string[];
   is_favorite: boolean;
@@ -576,7 +579,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadPrompts: async () => {
     try {
       const prompts = await safeInvoke<Prompt[]>("get_prompts");
-      set({ prompts });
+      set({
+        prompts: prompts.map((prompt) => ({
+          ...prompt,
+          material_type: prompt.material_type || "prompt",
+        })),
+      });
     } catch (error) {
       console.error("Failed to load prompts:", error);
       set({ dataError: `读取提示词库失败：${error}` });
