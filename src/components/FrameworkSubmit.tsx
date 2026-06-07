@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, Eye, Loader2, Plus, Save, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Eye, FileUp, Loader2, Plus, Save, Sparkles, Trash2, Wand2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { sendMessage } from "../lib/ai";
 import { FRAMEWORKS } from "../lib/frameworks";
@@ -62,6 +62,45 @@ function splitBestFor(value: string): string[] {
   return value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
 }
 
+function splitPromptExamples(value: string): string[] {
+  return value
+    .split(/\n\s*(?:---+|#{2,}|提示词\s*\d*[:：]|Prompt\s*\d*[:：])\s*\n/gi)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 20);
+}
+
+function buildPromptInductionContext(value: string): string {
+  const examples = splitPromptExamples(value);
+  const source = examples.length > 1 ? examples : [value.trim()];
+  return source
+    .slice(0, 8)
+    .map((item, index) => {
+      const clipped = item.length > 1800 ? `${item.slice(0, 1800)}...` : item;
+      return `【提示词样本 ${index + 1}】\n${clipped}`;
+    })
+    .join("\n\n");
+}
+
+function applyFrameworkExtraction(
+  responseContent: string,
+  setName: (value: string) => void,
+  setDescription: (value: string) => void,
+  setBestFor: (value: string) => void,
+  setTemplate: (value: string) => void,
+) {
+  const nameMatch = responseContent.match(/\*\*框架名称\*\*[：:]\s*(\S+)/);
+  if (nameMatch) setName(nameMatch[1]);
+
+  const bestForMatch = responseContent.match(/\*\*适用场景\*\*[：:]\s*([\s\S]+?)(?=\n\*\*|\n\d|$)/);
+  if (bestForMatch) setBestFor(bestForMatch[1].trim().replace(/\n/g, ", "));
+
+  const descMatch = responseContent.match(/\*\*框架全称\*\*[：:]\s*([\s\S]+?)(?=\n\*\*|\n\d|$)/);
+  if (descMatch) setDescription(descMatch[1].trim());
+
+  const templateMatch = responseContent.match(/\*\*框架模板\*\*[：:]\s*([\s\S]+)/);
+  if (templateMatch) setTemplate(templateMatch[1].trim());
+}
+
 export function FrameworkSubmit() {
   const { settings, customFrameworks, prompts, loadCustomFrameworks, loadPrompts } = useAppStore();
   const [name, setName] = useState("");
@@ -76,7 +115,12 @@ export function FrameworkSubmit() {
   const [generatedFramework, setGeneratedFramework] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [useMaterials, setUseMaterials] = useState(true);
+  const [sourcePrompts, setSourcePrompts] = useState("");
+  const [inducedFramework, setInducedFramework] = useState("");
+  const [isInducing, setIsInducing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const promptExampleCount = useMemo(() => splitPromptExamples(sourcePrompts).length || (sourcePrompts.trim() ? 1 : 0), [sourcePrompts]);
   const relatedMaterials = useMemo(
     () => (useMaterials && concept.trim() ? getRelevantMaterials(concept, prompts) : []),
     [concept, prompts, useMaterials],
@@ -118,6 +162,18 @@ export function FrameworkSubmit() {
     }
   };
 
+  const handleUploadPromptFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (files.length === 0) return;
+
+    const chunks = await Promise.all(files.map(async (file) => {
+      const text = await file.text();
+      return `\n---\n${file.name}\n${text}`;
+    }));
+    setSourcePrompts((current) => [current.trim(), ...chunks].filter(Boolean).join("\n\n"));
+  };
+
   const handleGenerateFramework = async () => {
     if (!concept.trim() || isGenerating) return;
     setIsGenerating(true);
@@ -130,7 +186,6 @@ export function FrameworkSubmit() {
 
 ${materialContext ? `参考素材（只用于提取场景和约束，不要逐字照抄）：\n${materialContext}\n` : ""}
 请按以下格式输出框架：
-
 1. **框架名称**：用一个简短的缩写命名
 2. **框架全称**：每个字母代表的含义
 3. **适用场景**：这个框架最适合什么类型的任务，用逗号分隔
@@ -158,24 +213,74 @@ ${materialContext ? `参考素材（只用于提取场景和约束，不要逐�
         return;
       }
 
-      const responseContent = response.content;
-      setGeneratedFramework(responseContent);
-
-      const nameMatch = responseContent.match(/\*\*框架名称\*\*[：:]\s*(\S+)/);
-      if (nameMatch) setName(nameMatch[1]);
-
-      const bestForMatch = responseContent.match(/\*\*适用场景\*\*[：:]\s*([\s\S]+?)(?=\n\*\*|\n\d|$)/);
-      if (bestForMatch) setBestFor(bestForMatch[1].trim().replace(/\n/g, ", "));
-
-      const descMatch = responseContent.match(/\*\*框架全称\*\*[：:]\s*([\s\S]+?)(?=\n\*\*|\n\d|$)/);
-      if (descMatch) setDescription(descMatch[1].trim());
-
-      const templateMatch = responseContent.match(/\*\*框架模板\*\*[：:]\s*([\s\S]+)/);
-      if (templateMatch) setTemplate(templateMatch[1].trim());
+      setGeneratedFramework(response.content);
+      applyFrameworkExtraction(response.content, setName, setDescription, setBestFor, setTemplate);
     } catch (error) {
       setGeneratedFramework(`生成失败：${error}`);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleInduceFramework = async () => {
+    if (!sourcePrompts.trim() || isInducing) return;
+    setIsInducing(true);
+    setInducedFramework("");
+
+    const promptSamples = buildPromptInductionContext(sourcePrompts);
+    const prompt = `你是 PromptCraft 的框架设计专家。请从用户提供的多个提示词样本中归纳一个新的可复用提示词框架。
+
+你的任务不是改写这些提示词，而是抽取它们共同的结构规律，形成严谨、可复用、可保存的框架。
+
+请遵守这些规则：
+1. 先识别样本共同目标、反复出现的信息槽位、约束类型、输出契约、质量标准和停止/追问边界。
+2. 区分“核心维度”和“只在个别样本出现的细节”，不要把偶然细节写成框架必填项。
+3. 每个维度必须有清晰名称、作用、填写指引和判断标准。
+4. 框架必须能泛化到同类任务，而不是只服务原始样本。
+5. 如果样本之间冲突，要把冲突归纳为可选规则或适用边界。
+6. 输出要足够紧凑，避免生成过长导致注意力稀释。
+
+提示词样本：
+${promptSamples}
+
+请按以下格式输出：
+
+## 归纳依据
+- 共同目标：
+- 共同结构：
+- 可复用变量：
+- 适用边界：
+
+## 新框架
+1. **框架名称**：简短、有意义的缩写
+2. **框架全称**：每个字母代表的含义
+3. **适用场景**：用逗号分隔
+4. **框架模板**：使用清晰分节，每个维度包含“填写内容 / 判断标准 / 可选提醒”
+
+要求：最终必须包含 **框架名称**、**框架全称**、**适用场景**、**框架模板** 这些标题，方便系统自动填入保存表单。`;
+
+    try {
+      const response = await sendMessage(prompt, [], {
+        apiKey: settings.apiKey,
+        apiEndpoint: settings.apiEndpoint,
+        model: settings.model,
+        temperature: Math.min(settings.temperature, 0.7),
+        maxTokens: settings.maxTokens,
+        requestTimeoutSecs: settings.requestTimeoutSecs,
+        enableStreaming: settings.enableStreaming,
+      });
+
+      if (!response) {
+        setInducedFramework("归纳已取消");
+        return;
+      }
+
+      setInducedFramework(response.content);
+      applyFrameworkExtraction(response.content, setName, setDescription, setBestFor, setTemplate);
+    } catch (error) {
+      setInducedFramework(`归纳失败：${error}`);
+    } finally {
+      setIsInducing(false);
     }
   };
 
@@ -200,6 +305,8 @@ ${materialContext ? `参考素材（只用于提取场景和约束，不要逐�
     setBestFor("");
     setConcept("");
     setGeneratedFramework("");
+    setSourcePrompts("");
+    setInducedFramework("");
   };
 
   return (
@@ -207,7 +314,7 @@ ${materialContext ? `参考素材（只用于提取场景和约束，不要逐�
       <div className="border-b border-border p-4">
         <h1 className="text-xl font-semibold text-wrap-anywhere">框架管理</h1>
         <p className="mt-1 text-sm text-muted-foreground text-wrap-anywhere">
-          查看内置框架、让 AI 结合素材库生成新框架，或手动提交自定义框架。
+          查看内置框架、从需求生成框架，或从多个提示词样本归纳新的自定义框架。
         </p>
       </div>
 
@@ -297,6 +404,67 @@ ${materialContext ? `参考素材（只用于提取场景和约束，不要逐�
 
         <div className="border-t border-border pt-6">
           <h2 className="mb-4 flex min-w-0 items-center gap-2 text-lg font-semibold">
+            <FileUp className="h-5 w-5 shrink-0" />
+            <span className="min-w-0 text-wrap-anywhere">从提示词样本归纳框架</span>
+          </h2>
+
+          <div className="space-y-4">
+            <div>
+              <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <label className="text-sm font-medium">粘贴一个或多个提示词</label>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1 rounded-md bg-secondary px-3 py-1.5 text-xs text-secondary-foreground hover:bg-secondary/80"
+                >
+                  <FileUp className="h-3.5 w-3.5" />
+                  上传文本
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.md,.json,text/plain,application/json"
+                  multiple
+                  className="hidden"
+                  onChange={handleUploadPromptFile}
+                />
+              </div>
+              <textarea
+                value={sourcePrompts}
+                onChange={(event) => setSourcePrompts(event.target.value)}
+                placeholder={"可以直接粘贴多个提示词。建议用 ---、##、提示词1：或 Prompt 1: 分隔不同样本。"}
+                rows={8}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-wrap-anywhere"
+              />
+              <p className="mt-1 text-xs text-muted-foreground text-wrap-anywhere">
+                当前识别到 {promptExampleCount} 个样本。归纳时最多取前 8 个样本，并会裁剪过长内容，避免上下文过载。
+              </p>
+            </div>
+
+            <button
+              onClick={() => void handleInduceFramework()}
+              disabled={!sourcePrompts.trim() || isInducing}
+              className="flex min-w-0 max-w-full items-center gap-2 rounded-lg bg-primary px-4 py-2 text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isInducing ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Wand2 className="h-4 w-4 shrink-0" />}
+              <span className="min-w-0 text-wrap-anywhere">{isInducing ? "正在归纳..." : "归纳生成新框架"}</span>
+            </button>
+
+            {inducedFramework && (
+              <div className="min-w-0 rounded-lg border border-border bg-muted/50 p-4">
+                <h3 className="mb-2 text-sm font-medium text-wrap-anywhere">归纳出的框架</h3>
+                <div className="markdown-content prose prose-sm dark:prose-invert mb-4 max-w-none text-wrap-anywhere [&_*]:text-wrap-anywhere">
+                  <ReactMarkdown>{inducedFramework}</ReactMarkdown>
+                </div>
+                <p className="text-xs text-muted-foreground text-wrap-anywhere">
+                  系统会尝试把框架名称、全称、适用场景和模板自动填入下方表单。保存前可以继续手动调整。
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-6">
+          <h2 className="mb-4 flex min-w-0 items-center gap-2 text-lg font-semibold">
             <Wand2 className="h-5 w-5 shrink-0" />
             <span className="min-w-0 text-wrap-anywhere">AI 生成框架</span>
           </h2>
@@ -363,7 +531,7 @@ ${materialContext ? `参考素材（只用于提取场景和约束，不要逐�
         <div className="border-t border-border pt-6">
           <h2 className="mb-4 flex min-w-0 items-center gap-2 text-lg font-semibold">
             <Plus className="h-5 w-5 shrink-0" />
-            <span className="min-w-0 text-wrap-anywhere">{generatedFramework ? "完善框架信息" : "手动提交框架"}</span>
+            <span className="min-w-0 text-wrap-anywhere">{generatedFramework || inducedFramework ? "完善框架信息" : "手动提交框架"}</span>
           </h2>
 
           <div className="min-w-0 max-w-2xl space-y-4">
