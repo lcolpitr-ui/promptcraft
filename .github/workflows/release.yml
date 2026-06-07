@@ -9,7 +9,7 @@ on:
       tagName:
         description: "Release tag to create or update"
         required: true
-        default: "v0.2.8"
+        default: "v0.2.9"
 
 permissions:
   contents: write
@@ -57,6 +57,8 @@ jobs:
             PromptCraft Windows release.
 
             Highlights:
+            - Adds a prompt-sample induction workflow that can paste or upload multiple prompts and summarize their common pattern into a new framework.
+            - The induced framework extracts common goals, reusable slots, output contracts, applicability boundaries, and optional rules before filling the save form.
             - Adds a reusable material library for briefs, prompts, AI responses, examples, and anti-examples.
             - Chat messages can be saved into the material library with editable metadata.
             - Framework generation can reference a few relevant saved materials without flooding the context.
